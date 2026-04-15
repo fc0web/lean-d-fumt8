@@ -1,0 +1,11 @@
+name = "LeanDFumt"
+version = "1.0.0"
+keywords = ["logic", "many-valued", "D-FUMT8", "Rei-AIOS", "paraconsistent"]
+defaultTargets = ["LeanDFumt"]
+
+[leanOptions]
+pp.unicode.fun = true
+relaxedAutoImplicit = false
+
+[[lean_lib]]
+name = "LeanDFumt"
