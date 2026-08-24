@@ -47,6 +47,11 @@
     <p>A new <code>axiom</code> declaration was introduced to sidestep a proof. Discipline: axiom-minimality.</p>
   </li>
   <li>
+    <h3><a href="errors/classical-choice-smuggled.html">Classical.choice smuggled</a></h3>
+    <p class="msg">(silent — #print axioms reveals Classical.choice)</p>
+    <p>A theorem depends on <code>Classical.choice</code> without declaring it, breaking the decide-only constructive discipline.</p>
+  </li>
+  <li>
     <h3><a href="errors/type-mismatch-nat-float.html">type mismatch (Nat vs Float)</a></h3>
     <p class="msg">type mismatch ... has type Nat but is expected to have type Float</p>
     <p>Numeric expression is <code>Nat</code> where <code>Float</code> is required. Common when adding numeric anchors.</p>

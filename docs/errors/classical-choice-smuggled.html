@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Classical.choice smuggled — LeanDFumt Errors</title>
+  <meta name="description" content="Detecting a Lean 4 proof that silently depends on Classical.choice under a constructive-target declaration. Preserves the decide-only discipline of LeanDFumt.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>Classical.choice smuggled</span>
+</nav>
+
+<h1>
+  Classical.choice smuggled
+  <span class="sub">構成的証明のはずが <code>Classical.choice</code> に依存している</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p><strong>Lean itself emits no error.</strong> This is a policy-level
+  detection: <code>#print axioms</code> on the offending theorem reveals
+  <code>Classical.choice</code> in the dependency list. The compiler is
+  entirely silent on it.</p>
+</div>
+
+<p>
+  Lean 4 accepts <code>Classical.choice</code> as a legitimate axiom of
+  the core standard library — it is part of Lean's trust root. But a
+  library that advertises itself as <em>constructive</em> (e.g. LeanDFumt,
+  whose 29 theorems are all closed by <code>decide</code> or
+  <code>native_decide</code> on a finite type) cannot silently take on
+  the choice axiom. A theorem that depends on it is no longer
+  <code>decide</code>-checkable, and the promise breaks.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: BadChoice.lean
+import LeanDFumt
+open Classical      -- silently pulls Classical.choice into scope
+
+namespace LeanDFumt
+
+/-- Looks constructive; actually depends on choice. -/
+theorem exists_TRUE_witness :
+    ∃ a : DFUMT8, DFUMT8.toBool a = true := by
+  exact ⟨Classical.choice ⟨.TRUE⟩, by decide⟩
+
+end LeanDFumt</code></pre>
+
+<p>Build output: <em>clean</em>. No warning, no error. Now check the axioms:</p>
+
+<div class="block block-error">
+  <pre><code>#print axioms LeanDFumt.exists_TRUE_witness
+-- 'LeanDFumt.exists_TRUE_witness' depends on axioms:
+--   Classical.choice, propext, Quot.sound</code></pre>
+</div>
+
+<p>
+  The theorem compiles and looks harmless — but it is no longer part of
+  the <code>decide</code>-only, no-Mathlib discipline the library
+  advertises. Downstream code that assumed constructive availability
+  (e.g. extracting a witness at build time) may still work, but the
+  soundness argument has quietly shifted from "true on the finite type"
+  to "true in classical logic."
+</p>
+
+<h2>Why it matters</h2>
+
+<p>
+  Every LeanDFumt theorem in <code>Theorems.lean</code> and
+  <code>PropEmbedding.lean</code> is closed by <code>decide</code>,
+  <code>native_decide</code>, or <code>rfl</code> — tactics that reduce
+  to a compile-time check on the eight-element finite type. This is what
+  makes the library's soundness claim honest:
+</p>
+
+<blockquote>
+  Given the axioms of Lean 4 core (excluding <code>Classical.choice</code>),
+  these 29 theorems are true.
+</blockquote>
+
+<p>
+  A single theorem that smuggles in <code>Classical.choice</code>
+  invalidates that claim across the whole module. Because Lean does not
+  warn, and because the polluted theorem often still admits
+  <code>decide</code>-shaped tactics in other positions, the pollution
+  can spread through a project without any interactive signal.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Rewrite the proof without <code>Classical.choice</code>. For
+  existential claims on the finite <code>DFUMT8</code> type, produce an
+  explicit witness — usually one of the eight constructors:</p>
+  <pre><code>theorem exists_TRUE_witness :
+    ∃ a : DFUMT8, DFUMT8.toBool a = true :=
+  ⟨.TRUE, by decide⟩</code></pre>
+
+  <p>Verify the fix by re-running <code>#print axioms</code>:</p>
+  <pre><code>#print axioms LeanDFumt.exists_TRUE_witness
+-- 'LeanDFumt.exists_TRUE_witness' does not depend on any axioms</code></pre>
+
+  <p>Also remove the <code>open Classical</code> line if it is no longer
+  needed — leaving it in place is a standing invitation for the next
+  edit to reintroduce the same bug.</p>
+</div>
+
+<p>
+  If a statement genuinely requires classical reasoning and cannot be
+  expressed on the finite type, it does not belong in
+  <code>LeanDFumt.Theorems</code>. Move it to a separate module that is
+  opted out of the constructive-check target — the same pattern used for
+  a hypothetical Mathlib bridge library (see
+  <a href="mathlib-dependency-introduced.html">Mathlib dependency introduced</a>).
+</p>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    not directly detectable through <code>verify()</code> alone. A file
+    that silently depends on <code>Classical.choice</code> still
+    compiles, so <code>verify()</code> returns <code>VALID</code> on
+    downstream theorems. Enforcement in v0 is a pre-check that runs
+    <em>after</em> compilation but <em>before</em> the file is admitted
+    to <code>stats()</code>: for every theorem declared in the
+    constructive-target modules (<code>LeanDFumt.Theorems</code>,
+    <code>LeanDFumt.PropEmbedding</code>), run
+    <code>#print axioms &lt;theorem&gt;</code> and reject the file if
+    <code>Classical.choice</code> appears in any axiom list. Rejected
+    files never enter <code>stats()</code>, keeping
+    <code>decision_rate</code> an honest measure of what was verified
+    under the advertised discipline rather than accepted-by-policy.
+  </p>
+  <p>
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>boundary_report(kind = "classical_choice")</code> enumerates
+    every theorem in the project (via <code>Lean.Environment.constants</code>)
+    whose transitive axiom dependencies — computed with the same
+    algorithm used by <code>#print axioms</code> — include
+    <code>Classical.choice</code>. Cross-check against a project-declared
+    <code>ConstructiveTargets.lean</code> manifest so downstream users
+    that explicitly opt in to classical reasoning are not falsely flagged.
+    Layer 2 is a thin wrapper over v0 and does not introduce independent
+    decision logic.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="axiom-bypass.html">axiom bypass</a> — the analogous whitelist-based check at the axiom boundary; <code>Classical.choice</code> is technically an axiom, but core-supplied rather than user-added.</li>
+  <li><a href="sorry-in-proof.html">sorry in proof</a> — the other silent-pollution pattern; both require post-compile inspection to catch.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>
