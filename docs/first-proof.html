@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LeanDFumt — Your First Lean 4 Proof</title>
+  <meta name="description" content="A hands-on Lean 4 walkthrough for readers who have never opened a proof assistant. Five moves, no installation, ten minutes.">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Scoped additions for tutorial pages — reuses style.css tokens */
+
+    .eyebrow {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .78em;
+      color: var(--muted);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin: 1em 0 .5em;
+    }
+    .deck {
+      font-size: 1.05em;
+      color: var(--muted);
+      margin-top: .8em;
+      max-width: 60ch;
+    }
+
+    .theorem-card {
+      background: var(--code-bg);
+      padding: 1.1em 1.4em;
+      margin: 1.5em 0;
+      border-left: 3px solid var(--accent);
+      border-radius: 0 3px 3px 0;
+    }
+    .theorem-name {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .82em;
+      color: var(--muted);
+      margin-bottom: .4em;
+    }
+    .theorem-statement {
+      font-size: 1.15em;
+      font-weight: 600;
+      margin: .3em 0;
+      font-family: "SFMono-Regular", Consolas, monospace;
+    }
+    .theorem-note {
+      font-size: .88em;
+      color: var(--muted);
+      font-style: italic;
+      margin: .3em 0 0;
+    }
+
+    .progress {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      padding: .6em 0;
+      margin: 1.5em 0 0;
+      border-bottom: 1px solid var(--border);
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .85em;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1em;
+      z-index: 5;
+    }
+    .progress .p-step { color: var(--fg); }
+    .progress .p-goals { color: var(--accent); }
+    .progress .p-goals.zero { color: var(--ok-line); }
+    .progress-bar {
+      grid-column: span 2;
+      height: 2px;
+      background: var(--border);
+      margin-top: .4em;
+      width: 100%;
+      position: relative;
+    }
+    .progress-bar::after {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: var(--pct, 20%);
+      background: var(--accent);
+      transition: width .22s ease;
+    }
+    .progress-wrap {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 5;
+      padding-bottom: .3em;
+      margin-bottom: 1.5em;
+    }
+
+    ol.steps { list-style: none; padding: 0; margin: 1.5em 0; }
+    li.step {
+      margin: 2em 0;
+      padding-bottom: 1.5em;
+      border-bottom: 1px dashed var(--border);
+      opacity: .35;
+      transform: translateY(4px);
+      transition: opacity .35s ease, transform .35s ease;
+    }
+    li.step:last-child { border-bottom: none; }
+    li.step.in-view { opacity: 1; transform: none; }
+    @media (prefers-reduced-motion: reduce) {
+      li.step { opacity: 1; transform: none; transition: none; }
+    }
+
+    .step-tag {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .78em;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: .8em;
+      display: block;
+    }
+
+    /* InfoView reuses .block styling patterns from style.css */
+    .infoview {
+      border-left: 3px solid var(--note-line);
+      background: var(--note-tint);
+      padding: .8em 1.2em;
+      margin: 1em 0;
+      border-radius: 0 3px 3px 0;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .88em;
+      line-height: 1.65;
+    }
+    .infoview-done {
+      border-left-color: var(--ok-line);
+      background: var(--ok-tint);
+    }
+    .infoview-label {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: .72em;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: .5em;
+      display: flex;
+      align-items: center;
+      gap: .5em;
+    }
+    .infoview-label::before {
+      content: "";
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--note-line);
+    }
+    .infoview-done .infoview-label::before { background: var(--ok-line); }
+    .infoview-done .infoview-label { color: var(--ok-line); }
+    .goal { padding: .3em 0; }
+    .goal + .goal { border-top: 1px dashed var(--border); margin-top: .5em; padding-top: .7em; }
+    .goal-label {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: .72em;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: .3em;
+    }
+    .hyp { display: block; color: var(--muted); padding-left: 1em; text-indent: -1em; }
+    .turnstile { color: var(--accent); font-weight: 600; margin-right: .5em; }
+    .target { color: var(--fg); font-weight: 500; }
+    .done-text { color: var(--ok-line); font-weight: 500; text-align: center; }
+
+    .explain {
+      margin: 1em 0 0;
+      color: var(--fg);
+      font-size: .96em;
+    }
+
+    /* Lean pre — inherits from style.css .pre; add subtle keyword tint */
+    pre.lean .kw { color: var(--accent); font-weight: 600; }
+    pre.lean .cmt { color: var(--muted); font-style: italic; }
+    pre.lean .str { color: var(--ok-line); }
+    pre.lean .todo { background: var(--err-tint); padding: 0 .2em; border-radius: 2px; }
+
+    ul.next-links { list-style: none; padding: 0; }
+    ul.next-links li {
+      padding: .8em 0;
+      border-top: 1px solid var(--border);
+    }
+    ul.next-links li:last-child { border-bottom: 1px solid var(--border); }
+    ul.next-links .note {
+      color: var(--muted);
+      font-size: .9em;
+      margin-left: .5em;
+    }
+  </style>
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt</a> ›
+  <a href="index.html">Docs</a> ›
+  First Proof
+</nav>
+
+<h1>
+  Your first Lean 4 proof
+  <span class="sub">A five-move walkthrough — no installation, ten minutes.</span>
+</h1>
+
+<div class="eyebrow">A LeanDFumt tutorial · runs statically in the browser</div>
+
+<p class="deck">
+  A proof assistant is not a solver. It is a witness — it accepts your steps only if each one
+  is legal, and refuses everything else. This page walks through one small theorem so you can
+  feel that machinery from the outside.
+</p>
+
+<h2>What you are about to witness</h2>
+<p>
+  Lean 4 is a proof assistant developed at Microsoft Research and now maintained by the Lean FRO.
+  Its trusted kernel — the part that actually decides whether a proof is valid — is roughly thirty
+  thousand lines of C++. Everything else in the ecosystem, including all of mathematics that has been
+  formalized in Lean, ultimately reduces to a term the kernel accepts.
+</p>
+<p>
+  You will prove one theorem: <em>for every natural number n, adding zero on the left returns n</em>.
+  It is trivial to <em>believe</em>. Proving it — from the definition of addition, without hand-waving,
+  in a way a machine will check — takes five moves.
+</p>
+<p>
+  The panel below the code, on each step, is a rendering of Lean's <em>InfoView</em> — the pane the
+  assistant uses to tell you which goals remain. Watch that panel. When it says <em>Goals accomplished</em>,
+  the theorem is proved.
+</p>
+
+<h2>The theorem</h2>
+<div class="theorem-card">
+  <div class="theorem-name">theorem  zero_add</div>
+  <div class="theorem-statement">∀ n : Nat, &nbsp; 0 + n = n</div>
+  <div class="theorem-note">for every natural number n, zero plus n equals n</div>
+</div>
+
+<h2>The proof, one step at a time</h2>
+
+<div class="progress-wrap">
+  <div class="progress" aria-live="polite">
+    <span><span class="p-step" data-step-num>Step 1</span> of 5</span>
+    <span><span class="p-goals" data-goals-num>1</span> goal remaining</span>
+  </div>
+  <div class="progress-bar" style="--pct: 20%"></div>
+</div>
+
+<ol class="steps">
+
+  <li class="step" data-step="1" data-goals="1">
+    <span class="step-tag">Step 1 — declare the goal</span>
+<pre class="lean"><code><span class="kw">theorem</span> zero_add (n : <span class="kw">Nat</span>) : 0 + n = n := <span class="kw">by</span>
+  <span class="cmt">-- proof goes here</span>
+  <span class="todo">sorry</span></code></pre>
+    <div class="infoview">
+      <div class="infoview-label">Goals (1)</div>
+      <div class="goal">
+        <span class="hyp">n : Nat</span>
+        <span class="turnstile">⊢</span><span class="target">0 + n = n</span>
+      </div>
+    </div>
+    <p class="explain">
+      We name the theorem and state it, then open a <em>by-block</em> — a tactic proof.
+      The keyword <code>sorry</code> is a placeholder promising a proof we haven't written yet.
+      The InfoView shows one open goal: given a natural number <code>n</code>, prove <code>0 + n = n</code>.
+    </p>
+  </li>
+
+  <li class="step" data-step="2" data-goals="2">
+    <span class="step-tag">Step 2 — induct on n</span>
+<pre class="lean"><code><span class="kw">theorem</span> zero_add (n : <span class="kw">Nat</span>) : 0 + n = n := <span class="kw">by</span>
+  <span class="kw">induction</span> n <span class="kw">with</span>
+  | zero =&gt; <span class="todo">sorry</span>
+  | succ k ih =&gt; <span class="todo">sorry</span></code></pre>
+    <div class="infoview">
+      <div class="infoview-label">Goals (2)</div>
+      <div class="goal">
+        <div class="goal-label">case zero</div>
+        <span class="turnstile">⊢</span><span class="target">0 + 0 = 0</span>
+      </div>
+      <div class="goal">
+        <div class="goal-label">case succ</div>
+        <span class="hyp">k : Nat</span>
+        <span class="hyp">ih : 0 + k = k</span>
+        <span class="turnstile">⊢</span><span class="target">0 + Nat.succ k = Nat.succ k</span>
+      </div>
+    </div>
+    <p class="explain">
+      Induction splits the proof in two. The <em>base case</em> asks us to prove the statement when
+      <code>n</code> is zero. The <em>inductive case</em> asks: assuming the theorem already holds for
+      some <code>k</code> — that assumption is named <code>ih</code>, the <em>induction hypothesis</em> —
+      prove it for <code>k + 1</code>.
+    </p>
+  </li>
+
+  <li class="step" data-step="3" data-goals="1">
+    <span class="step-tag">Step 3 — close the base case</span>
+<pre class="lean"><code><span class="kw">theorem</span> zero_add (n : <span class="kw">Nat</span>) : 0 + n = n := <span class="kw">by</span>
+  <span class="kw">induction</span> n <span class="kw">with</span>
+  | zero =&gt; <span class="kw">rfl</span>
+  | succ k ih =&gt; <span class="todo">sorry</span></code></pre>
+    <div class="infoview">
+      <div class="infoview-label">Goals (1)</div>
+      <div class="goal">
+        <div class="goal-label">case succ</div>
+        <span class="hyp">k : Nat</span>
+        <span class="hyp">ih : 0 + k = k</span>
+        <span class="turnstile">⊢</span><span class="target">0 + Nat.succ k = Nat.succ k</span>
+      </div>
+    </div>
+    <p class="explain">
+      <code>rfl</code> — short for <em>reflexivity</em> — closes any goal whose two sides are equal
+      <em>by definition</em>. Lean defines addition so that <code>0 + 0</code> reduces to <code>0</code>
+      without further work. One goal down; one remains.
+    </p>
+  </li>
+
+  <li class="step" data-step="4" data-goals="1">
+    <span class="step-tag">Step 4 — unfold the successor</span>
+<pre class="lean"><code><span class="kw">theorem</span> zero_add (n : <span class="kw">Nat</span>) : 0 + n = n := <span class="kw">by</span>
+  <span class="kw">induction</span> n <span class="kw">with</span>
+  | zero =&gt; <span class="kw">rfl</span>
+  | succ k ih =&gt; <span class="kw">rw</span> [Nat.add_succ]</code></pre>
+    <div class="infoview">
+      <div class="infoview-label">Goals (1)</div>
+      <div class="goal">
+        <div class="goal-label">case succ</div>
+        <span class="hyp">k : Nat</span>
+        <span class="hyp">ih : 0 + k = k</span>
+        <span class="turnstile">⊢</span><span class="target">Nat.succ (0 + k) = Nat.succ k</span>
+      </div>
+    </div>
+    <p class="explain">
+      The lemma <code>Nat.add_succ</code> rewrites <code>a + Nat.succ b</code> into
+      <code>Nat.succ (a + b)</code>. The <code>rw</code> tactic applies that rewrite left-to-right on
+      the goal. Notice how the <em>shape</em> of the goal changed: we now need to prove
+      <code>Nat.succ (0 + k) = Nat.succ k</code>.
+    </p>
+  </li>
+
+  <li class="step" data-step="5" data-goals="0">
+    <span class="step-tag">Step 5 — apply the induction hypothesis</span>
+<pre class="lean"><code><span class="kw">theorem</span> zero_add (n : <span class="kw">Nat</span>) : 0 + n = n := <span class="kw">by</span>
+  <span class="kw">induction</span> n <span class="kw">with</span>
+  | zero =&gt; <span class="kw">rfl</span>
+  | succ k ih =&gt; <span class="kw">rw</span> [Nat.add_succ, ih]</code></pre>
+    <div class="infoview infoview-done">
+      <div class="infoview-label">Goals accomplished</div>
+      <div class="done-text">No goals · theorem proved</div>
+    </div>
+    <p class="explain">
+      Rewriting with <code>ih</code> — our assumption that <code>0 + k = k</code> — reduces the goal
+      to <code>Nat.succ k = Nat.succ k</code>. Lean discharges that reflexively and closes the proof.
+      The InfoView is empty. Every path through the theorem has been checked.
+    </p>
+  </li>
+
+</ol>
+
+<h2>What just happened</h2>
+<p>
+  Every step you saw was checked, in real time, against the definitions of <code>Nat</code>,
+  <code>0</code>, <code>+</code>, and <code>=</code>. No test suite ran. No fuzzer sampled inputs.
+  A verifier reduced the whole proof to axioms of type theory and confirmed that the resulting term
+  type-checks. The theorem is now true not because anyone believes it, but because refusing to
+  believe it would require refuting Lean's kernel — a much harder problem than the one we solved.
+</p>
+<p>
+  This is the atomic operation of formal verification. It scales. Cryptographic protocols, compiler
+  passes, distributed consensus, and — increasingly — AI agent behavior are being proved this way,
+  one theorem at a time. What you just watched is not a toy that only works on toy problems. It is
+  the beginning of the same machinery.
+</p>
+
+<h2>Where to go from here</h2>
+<ul class="next-links">
+  <li>
+    <a href="https://lean-lang.org/theorem_proving_in_lean4/" rel="noopener">Theorem Proving in Lean 4</a>
+    <span class="note">— the canonical introduction, by Avigad, de Moura, Kong, and Ullrich</span>
+  </li>
+  <li>
+    <a href="https://adam.math.hhu.de/#/g/leanprover-community/NNG4" rel="noopener">Natural Number Game</a>
+    <span class="note">— prove your first hundred theorems in a browser, no install</span>
+  </li>
+  <li>
+    <a href="https://aconite-ac.github.io/theorem_proving_in_lean4_ja/" rel="noopener">Theorem Proving in Lean 4 (日本語訳)</a>
+    <span class="note">— by aconite-ac, thorough and well-maintained</span>
+  </li>
+  <li>
+    <a href="https://github.com/fc0web/lean-d-fumt8" rel="noopener">LeanDFumt · D-FUMT₈</a>
+    <span class="note">— 29 zero-sorry theorems for eight-valued logic in pure Lean 4, no Mathlib. See the <a href="agent-verification.html">companion essay</a> for the AI-agent-safety angle, and the <a href="index.html">error database</a> for common Lean 4 pitfalls.</span>
+  </li>
+</ul>
+
+<footer>
+  <p>
+    <strong>LeanDFumt Tutorial</strong> — part of the
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt</a>
+    library by 藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026.
+    Licensed Apache-2.0. Lean 4.27.0. Proof states rendered statically — no telemetry, no cookies.
+  </p>
+</footer>
+
+<script>
+  (function () {
+    const steps = Array.from(document.querySelectorAll('li.step'));
+    const stepNum = document.querySelector('[data-step-num]');
+    const goalsNum = document.querySelector('[data-goals-num]');
+    const bar = document.querySelector('.progress-bar');
+    const goalsWrap = document.querySelector('.p-goals');
+    if (!steps.length || !stepNum || !goalsNum || !bar) return;
+    let currentStep = 1;
+
+    const setProgress = (n, g) => {
+      stepNum.textContent = 'Step ' + n;
+      goalsNum.textContent = g;
+      bar.style.setProperty('--pct', (n / steps.length * 100) + '%');
+      goalsWrap.classList.toggle('zero', g === 0);
+    };
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('in-view');
+          const n = parseInt(e.target.dataset.step, 10);
+          const g = parseInt(e.target.dataset.goals, 10);
+          if (n >= currentStep) {
+            currentStep = n;
+            setProgress(n, g);
+          }
+        }
+      });
+    }, { rootMargin: '0px 0px -40% 0px', threshold: 0.15 });
+
+    steps.forEach(s => io.observe(s));
+  })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LeanDFumt — Agent Verification, Formally</title>
+  <meta name="description" content="Benchmark scores tell you an agent worked on the samples you tried. Formal verification tells you it works on the ones you didn't. This note shows what that second thing looks like — using Lean 4 to prove a real property about an agent, in forty lines.">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Scoped additions for note articles — reuses style.css tokens */
+
+    .eyebrow {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .78em;
+      color: var(--muted);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      margin: 1em 0 .5em;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .8em;
+      align-items: center;
+    }
+    .eyebrow .sep {
+      width: 1.4em;
+      height: 1px;
+      background: var(--border);
+    }
+    .deck {
+      font-size: 1.05em;
+      color: var(--muted);
+      max-width: 62ch;
+      margin-top: .8em;
+    }
+    .byline {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .8em;
+      color: var(--muted);
+      margin-top: 1em;
+    }
+    .byline .author { color: var(--fg); }
+    .byline a { color: var(--muted); }
+    .byline a:hover { color: var(--accent); text-decoration: underline; }
+
+    /* Chapter numbering — real sequential structure */
+    h2 .chapter-num {
+      display: inline-block;
+      color: var(--accent);
+      font-weight: 500;
+      margin-right: .5em;
+      font-size: 1.05em;
+    }
+
+    /* Pullquote — reuses .block-note visual language */
+    .pullquote {
+      background: var(--note-tint);
+      border-left: 3px solid var(--note-line);
+      padding: 1em 1.4em;
+      margin: 1.5em 0;
+      border-radius: 0 3px 3px 0;
+      font-size: 1.05em;
+      font-style: italic;
+      line-height: 1.55;
+    }
+    .pullquote .attrib {
+      display: block;
+      margin-top: .6em;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .75em;
+      font-style: normal;
+      color: var(--muted);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    /* Notes list */
+    ul.notes { list-style: none; padding-left: 0; margin: 1.2em 0; }
+    ul.notes li {
+      padding: .8em 0 .8em 1.2em;
+      border-top: 1px solid var(--border);
+      position: relative;
+    }
+    ul.notes li:last-child { border-bottom: 1px solid var(--border); }
+    ul.notes li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 1.5em;
+      width: 6px; height: 6px;
+      background: var(--accent);
+      transform: rotate(45deg);
+    }
+
+    /* Lean pre — inherits from style.css; add subtle keyword tint */
+    pre.lean .kw { color: var(--accent); font-weight: 600; }
+    pre.lean .cmt { color: var(--muted); font-style: italic; }
+    pre.lean .str { color: var(--ok-line); }
+    pre.lean .sym { color: var(--note-line); }
+
+    /* Genesis Axiom mise-en-abyme */
+    .genesis {
+      margin: 2.5em auto 1em;
+      padding: 1.8em 0 1em;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      max-width: 500px;
+    }
+    .genesis-label {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .72em;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1em;
+    }
+    .genesis-sequence {
+      font-size: 1.4em;
+      color: var(--fg);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1em;
+      flex-wrap: wrap;
+    }
+    .genesis-sequence .arrow {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .7em;
+      color: var(--muted);
+    }
+    .genesis-caption {
+      margin-top: 1em;
+      font-size: .85em;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    /* Cross-link to companion tutorial — reuses .block-fix visual language */
+    .cross-link {
+      display: block;
+      background: var(--ok-tint);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--ok-line);
+      padding: 1em 1.4em;
+      margin: 2em 0 1em;
+      border-radius: 0 3px 3px 0;
+      text-decoration: none;
+      color: inherit;
+      transition: border-color .15s;
+    }
+    .cross-link:hover { border-color: var(--ok-line); text-decoration: none; }
+    .cross-link .cl-label {
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .72em;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--ok-line);
+      font-weight: 600;
+      margin-bottom: .3em;
+    }
+    .cross-link .cl-title {
+      font-weight: 600;
+      font-size: 1.05em;
+      color: var(--fg);
+      margin-bottom: .2em;
+    }
+    .cross-link .cl-desc {
+      font-size: .9em;
+      color: var(--muted);
+      margin: 0;
+    }
+    .cross-link .cl-cta {
+      display: inline-block;
+      margin-top: .6em;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .85em;
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt</a> ›
+  <a href="index.html">Docs</a> ›
+  Agent Verification
+</nav>
+
+<h1>
+  Agent verification, formally
+  <span class="sub">なぜ次の層は「形式的」でなければならないのか — LLMエージェントの検証を Lean 4 で書く</span>
+</h1>
+
+<div class="eyebrow">
+  <span>LeanDFumt · Note</span>
+  <span class="sep"></span>
+  <span>2026-08-25</span>
+  <span class="sep"></span>
+  <span>12 min read</span>
+</div>
+
+<p class="deck">
+  Benchmark scores tell you an agent worked on the samples you tried. Formal verification tells you it
+  works on the ones you didn't. This note walks through what that second thing looks like — using
+  Lean 4 to prove a real property about an agent, in about forty lines.
+</p>
+
+<p class="byline">
+  <span class="author">Nobuki Fujimoto · 藤本伸樹</span>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/fc0web" rel="noopener">@fc0web</a>
+  &nbsp;·&nbsp;
+  <a href="https://orcid.org/0009-0004-6019-9258" rel="noopener">ORCID</a>
+</p>
+
+<h2><span class="chapter-num">一</span> Two things that are called "agent evaluation"</h2>
+
+<p>
+  In June 2025, Gartner published a prediction that seems to have aged extremely well: over 40% of
+  agentic AI projects will be cancelled by the end of 2027, mostly because of cost overruns and,
+  more importantly, <em>"unclear business value or inadequate risk controls."</em> A year later,
+  most of the tooling that has grown around the agent space is aimed at exactly the first half of
+  that sentence — cost, latency, throughput, sampling. Almost none of it addresses the second.
+</p>
+
+<div class="pullquote">
+  Over 40% of agentic AI projects will be cancelled by 2027 — mostly for cost overruns and inadequate risk controls.
+  <span class="attrib">Gartner · June 2025</span>
+</div>
+
+<p>
+  This note is about the second half. Specifically: what it would mean to make a claim about an
+  agent that a machine can check, that holds for <em>every</em> input, not just the ones you tested.
+  That is what "formally verified" means. It walks through what it looks like to do that for an
+  agent, in Lean&nbsp;4, in about forty lines of code — and, just as importantly, what it does not do.
+</p>
+
+<p>
+  The 2026 evaluation landscape is dominated by two families of tools. The first is
+  <strong>benchmark-and-sample</strong>: you write a suite of scenarios, run the agent through them,
+  and measure completion rate, tool-call correctness, plan quality, or task success. The most
+  respected examples — τ-bench, SWE-bench, AgentBench — go beyond "did the LLM emit reasonable text"
+  and check <em>executed state</em>: did the database actually get updated correctly, did the test
+  suite actually pass. This is a real improvement over the "score the text output" era. It is not,
+  however, verification.
+</p>
+
+<p>
+  The second family is <strong>LLM-as-a-judge</strong>: you use a second model, usually a strong one,
+  to score the outputs of the first. It scales, it is cheap, and it captures nuance that
+  keyword-matching cannot. DeepEval, Braintrust, Langfuse, Arize Phoenix and roughly a dozen
+  commercial platforms are built around this idea. It is a way to make the sampling loop tighter and
+  the judgments more like human ones. It is not verification either.
+</p>
+
+<p>
+  The difference is quiet but important. Benchmarking answers <em>"how does the agent perform on
+  the distribution of inputs I tested?"</em> Verification answers <em>"is this property true for
+  <strong>all</strong> inputs, including inputs no one has written down?"</em> Sampling tools stop
+  at the first question. In domains where an agent moves money, dispenses medicine, controls
+  physical equipment, or acts on behalf of a user with real authority, only the second question is
+  load-bearing.
+</p>
+
+<h2><span class="chapter-num">二</span> What the second question actually means</h2>
+
+<p>
+  The claim that a program is <em>correct</em> has been a formal object for about sixty years.
+  Tony Hoare's 1969 paper on the axiomatic basis of programming introduced the notation
+  <code>{P} S {Q}</code> — if the predicate <code>P</code> holds before executing <code>S</code>,
+  then <code>Q</code> holds after. Everything that has happened since in program verification —
+  separation logic, refinement types, dependent types, model checking, SMT-backed contracts — is
+  elaboration and mechanization of that idea.
+</p>
+
+<p>
+  For an AI agent, the corresponding statement is not much different. An agent has a state (memory,
+  goals, tools it has invoked, side effects it has committed). Each action moves it from one state
+  to another. A <em>property</em> is a claim about the states an agent can reach: <em>the agent
+  never commits a financial transaction without a valid authorization token in scope</em>;
+  <em>the agent never exposes a document classified above the requester's clearance</em>;
+  <em>whenever the agent proposes a database write, the write is reversible for at least 24 hours</em>.
+</p>
+
+<p>
+  Sampling-based evaluation says: "I ran a hundred scenarios, and in ninety-eight of them the
+  property held." Formal verification says: "I have a proof, checked by a small kernel, that the
+  property holds in every reachable state — including the states no scenario reached."
+</p>
+
+<p>
+  The distance between those two claims is exactly the distance between "we didn't observe a
+  failure in testing" and "a failure cannot happen." For most software, the first is enough. For a
+  fraction of software — and increasingly for AI agents — it is not.
+</p>
+
+<h2><span class="chapter-num">三</span> What you can and cannot verify about an agent</h2>
+
+<p>
+  Here is the honest scope. <strong>You cannot verify the LLM.</strong> A modern language model is
+  a neural network of hundreds of billions of parameters trained on a corpus no one can enumerate.
+  There is no useful specification of what it will output; there is no proof about the distribution
+  of its next tokens that is worth writing. If someone tells you they formally verified a language
+  model itself, they either mean something much weaker than they are implying, or they are
+  describing an active research program that is nowhere near production.
+</p>
+
+<p>
+  What you <em>can</em> verify is the <strong>harness</strong> around the LLM: the code that reads
+  the model's output, decides what to do with it, invokes tools, updates state, and commits side
+  effects. That harness is ordinary software. It is a small state machine wrapped around an oracle.
+  And it is the harness — not the model — that is responsible for the property in every real
+  safety claim.
+</p>
+
+<p>
+  Consider "the agent will not execute a transaction without authorization." The model might well
+  <em>propose</em> such a transaction; models are stochastic and prompt-injectable and occasionally
+  bizarre. The property that matters is not that the model never proposes it. The property that
+  matters is that the <em>harness</em> refuses to execute it. That refusal lives in about ten lines
+  of code. It is those ten lines that can — and, in high-stakes deployments, should — be proved
+  correct.
+</p>
+
+<p>
+  This is a genuinely useful scoping. It means formal verification of agents is not blocked on the
+  mystery of LLM internals. It is blocked, if it is blocked at all, on writing down what the
+  harness must guarantee and then proving that the code does it.
+</p>
+
+<h2><span class="chapter-num">四</span> A minimal example, in Lean 4</h2>
+
+<p>
+  Let us do this concretely. We will model a tiny agent that takes actions of three kinds —
+  planning, calling a tool, or committing a transaction — and prove the property <em>the agent
+  never adds to its committed-transaction list when it has no authorization token</em>. Complete
+  Lean 4 source; you can paste this into any Lean 4 project and it will type-check.
+</p>
+
+<pre class="lean"><code><span class="cmt">-- Types the agent works with.</span>
+<span class="kw">structure</span> AuthToken <span class="kw">where</span>
+  issuer  : String
+  expires : Nat
+  <span class="kw">deriving</span> Repr
+
+<span class="kw">structure</span> Transaction <span class="kw">where</span>
+  amount   : Nat
+  receiver : String
+  <span class="kw">deriving</span> Repr
+
+<span class="kw">structure</span> ToolCall <span class="kw">where</span>
+  name : String
+  args : String
+  <span class="kw">deriving</span> Repr
+
+<span class="cmt">-- Every action the agent can take.</span>
+<span class="kw">inductive</span> AgentAction <span class="kw">where</span>
+  | plan (goal : String)
+  | callTool (call : ToolCall)
+  | commitTransaction (tx : Transaction)
+  <span class="kw">deriving</span> Repr
+
+<span class="cmt">-- Everything the agent carries with it.</span>
+<span class="kw">structure</span> AgentState <span class="kw">where</span>
+  auth      : Option AuthToken
+  committed : List Transaction
+  toolLog   : List ToolCall
+  <span class="kw">deriving</span> Repr
+
+<span class="cmt">-- The transition function. This is the harness.</span>
+<span class="kw">def</span> step (s : AgentState) : AgentAction → AgentState
+  | .plan _                <span class="sym">=&gt;</span> s
+  | .callTool c            <span class="sym">=&gt;</span> { s <span class="kw">with</span> toolLog := c :: s.toolLog }
+  | .commitTransaction tx  <span class="sym">=&gt;</span>
+      <span class="kw">match</span> s.auth <span class="kw">with</span>
+      | none   <span class="sym">=&gt;</span> s                                          <span class="cmt">-- refuse: no auth</span>
+      | some _ <span class="sym">=&gt;</span> { s <span class="kw">with</span> committed := tx :: s.committed }  <span class="cmt">-- accept</span></code></pre>
+
+<p>
+  That is the entire model. The action of interest is <code>commitTransaction</code>: it
+  pattern-matches on the auth field and refuses when it is <code>none</code>.
+</p>
+
+<p>
+  Now the theorem. What we want to prove: if the agent had no auth before a step, its committed
+  list does not grow.
+</p>
+
+<pre class="lean"><code><span class="kw">theorem</span> no_commit_without_auth
+    (s : AgentState) (a : AgentAction)
+    (h : s.auth = none) :
+    (step s a).committed = s.committed := <span class="kw">by</span>
+  <span class="kw">cases</span> a <span class="kw">with</span>
+  | plan _              <span class="sym">=&gt;</span> <span class="kw">rfl</span>
+  | callTool _          <span class="sym">=&gt;</span> <span class="kw">rfl</span>
+  | commitTransaction _ <span class="sym">=&gt;</span>
+      <span class="kw">simp</span> [step, h]</code></pre>
+
+<p>
+  Five lines of proof. <code>cases a</code> splits on the three possible actions. <code>plan</code>
+  and <code>callTool</code> do not touch <code>committed</code>, so <code>rfl</code> — reflexivity —
+  closes each. For <code>commitTransaction</code>, <code>simp [step, h]</code> unfolds
+  <code>step</code> and uses the hypothesis <code>h : s.auth = none</code> to force the
+  <code>none</code> branch, which returns <code>s</code> unchanged. The theorem is proved.
+</p>
+
+<p>
+  But that is a one-step claim. What we actually want is stronger: <em>the committed list does not
+  grow across any sequence of steps, as long as auth stays</em> <code>none</code>. That is an
+  induction.
+</p>
+
+<pre class="lean"><code><span class="cmt">-- Run the agent on a list of actions in order.</span>
+<span class="kw">def</span> run : AgentState → List AgentAction → AgentState
+  | s, []      <span class="sym">=&gt;</span> s
+  | s, a :: as <span class="sym">=&gt;</span> run (step s a) as
+
+<span class="kw">theorem</span> no_commit_without_auth_ever
+    (s : AgentState) (as : List AgentAction)
+    (h_init : s.auth = none)
+    (h_no_grant : ∀ a ∈ as, ∀ tok,
+                    a ≠ .callTool ⟨<span class="str">"grant_auth"</span>, tok⟩) :
+    (run s as).committed = s.committed := <span class="kw">by</span>
+  <span class="kw">induction</span> as <span class="kw">generalizing</span> s <span class="kw">with</span>
+  | nil <span class="sym">=&gt;</span> <span class="kw">rfl</span>
+  | cons a as ih <span class="sym">=&gt;</span>
+      <span class="kw">have</span> h_step_auth : (step s a).auth = s.auth := <span class="kw">by</span>
+        <span class="kw">cases</span> a <span class="kw">with</span>
+        | plan _              <span class="sym">=&gt;</span> <span class="kw">rfl</span>
+        | callTool _          <span class="sym">=&gt;</span> <span class="kw">rfl</span>
+        | commitTransaction _ <span class="sym">=&gt;</span> <span class="kw">simp</span> [step, h_init]
+      <span class="kw">have</span> h_next_auth : (step s a).auth = none := h_step_auth ▸ h_init
+      <span class="kw">have</span> h_next_committed : (step s a).committed = s.committed :=
+        no_commit_without_auth s a h_init
+      <span class="kw">rw</span> [run,
+          ih (step s a) h_next_auth
+             (<span class="kw">fun</span> a' ha' <span class="sym">=&gt;</span> h_no_grant a' (List.mem_cons_of_mem _ ha'))]
+      <span class="kw">exact</span> h_next_committed</code></pre>
+
+<p>
+  That proof does slightly more work — it has to carry the auth invariant across the induction, and
+  it has to depend on an assumption that no action in the sequence <em>granted</em> auth. In a
+  fuller model you would model auth-granting as its own action, prove that only that action can
+  flip <code>auth</code> from <code>none</code> to <code>some</code>, and derive the same conclusion
+  more compactly. The proof above is deliberately un-abstracted so the mechanics stay visible.
+</p>
+
+<p>
+  The interesting thing is not the proof itself. It is that once Lean's kernel has accepted these
+  lines, the claim is settled — not for the traces you tested, but for every list of actions the
+  agent can be given. You did not have to think of the adversarial sequence, because the induction
+  covers all sequences. This is the specific thing sampling cannot do.
+</p>
+
+<h2><span class="chapter-num">五</span> What this changes about how you build an agent</h2>
+
+<p>
+  Almost nothing, in the short term, if you do not need it. Most agent workloads today —
+  summarization, drafting, unstructured retrieval — do not have a property this sharp. Their
+  success criterion is "reasonable output most of the time," and sampling-based evaluation is
+  exactly the right tool.
+</p>
+
+<p>
+  The picture changes at the boundary where the agent's actions become irreversible or attributable.
+  A few examples where the shape of the guarantee shifts:
+</p>
+
+<ul class="notes">
+  <li><strong>Financial actions.</strong> <em>The agent will not initiate a transfer above threshold T without a two-factor confirmation.</em> A property that must hold on every trace, not most.</li>
+  <li><strong>Regulated data access.</strong> <em>The agent will not include personally identifying information in any output routed to unauthenticated recipients.</em> A monotonic non-leakage claim; sampling cannot exhaust the leak surface.</li>
+  <li><strong>Physical control.</strong> Agents wired to lab equipment, HVAC systems, warehouse robotics. <em>No sequence of commands leaves the actuator in a state outside operational safety bounds.</em></li>
+  <li><strong>Autonomous procurement.</strong> <em>The agent will not commit spending beyond the current budget line.</em></li>
+  <li><strong>Compliance-flagged deployments.</strong> Anywhere the deployer might have to demonstrate, to a regulator or an auditor, that a class of failure <em>cannot</em> happen. "Our test suite didn't catch it" is not a defense here; "we have a proof it doesn't happen" is.</li>
+</ul>
+
+<p>
+  For workloads like these, the practical architecture is not "run an LLM and hope." It is:
+  <strong>the LLM proposes, the verified harness disposes.</strong> The harness is small,
+  adversarially designed, and its critical properties are formally verified. The LLM does
+  everything the harness permits and nothing it does not. This is not novel as a pattern — it is
+  how a great many high-assurance systems have been built for decades — but its application to
+  LLM-driven agents is genuinely new, and it is where the interesting work is happening.
+</p>
+
+<h2><span class="chapter-num">六</span> Where this fits, and where it does not</h2>
+
+<p>Some honesty about the limits.</p>
+
+<ul class="notes">
+  <li><strong>Formal verification does not verify emergent behavior.</strong> If the property you care about is <em>"the agent behaves helpfully"</em> or <em>"the agent's outputs are factually correct,"</em> no proof will help you. Those are properties of the LLM, which is out of scope for the harness. LLM-as-a-judge, red-teaming, and sampling evaluation remain the right tools.</li>
+  <li><strong>Formal verification is not free.</strong> Writing the model and the proof for a real agent harness is a few weeks of specialist work, not a few hours. That cost is worth paying when the alternative is "we cannot ship in this jurisdiction" or "an untested failure mode costs us a million dollars per incident." It is not worth paying to gild a chatbot.</li>
+  <li><strong>Formal verification cannot cover the parts you did not model.</strong> A proof about the harness says nothing about a bug in the network layer, the operating system, or the LLM API's rate limiter. What it does is <em>reduce</em> your trust surface to those layers explicitly, so you can audit them separately and know what you are trusting.</li>
+  <li><strong>Formal verification does not remove the need for testing.</strong> Proofs are about specifications. Tests are about whether your specification is the right one. Both remain necessary. What formal verification removes is the class of failure where the code disagrees with a specification you already had.</li>
+</ul>
+
+<p>
+  Within those limits, the case is straightforward: for any agent whose failure has consequences
+  you would refuse to accept even once, sampling-based evaluation is a floor, not a ceiling. The
+  ceiling is a proof.
+</p>
+
+<h2><span class="chapter-num">七</span> Where LeanDFumt fits</h2>
+
+<p>
+  The example above is standard Lean 4. It requires no library beyond Mathlib and no framework
+  beyond Lean itself; you could implement it today. The
+  <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt</a> library — 29 zero-sorry theorems
+  for D-FUMT₈ eight-valued logic, no Mathlib dependency, Apache&nbsp;2.0 — is the public anchor of a
+  broader Rei-AIOS effort that treats <em>phase structure</em> as a first-class object: values move
+  through discrete phases, transitions are witnessed, and the type system refuses to let a value
+  cross a phase boundary without producing evidence.
+</p>
+
+<p>
+  That structure is a natural fit for the harness pattern above. An agent action, in Rei terms, is
+  not a function from state to state — it is a phase transition witnessed by an authorization
+  token. The theorem <code>no_commit_without_auth</code> becomes a phase-monotonicity property,
+  provable by construction rather than by induction. The
+  <a href="index.html">error database</a> in this same docs tree lists the everyday Lean 4 errors
+  encountered while writing proofs like these, each with a fix that preserves the
+  zero-<code>sorry</code>, no-Mathlib discipline.
+</p>
+
+<p>The name Rei — 0₀式 — is the name of a way of counting that begins before one:</p>
+
+<div class="genesis">
+  <div class="genesis-label">Genesis Axiom · v2</div>
+  <div class="genesis-sequence">
+    <span>∅</span>
+    <span class="arrow">→</span>
+    <span>・</span>
+    <span class="arrow">→</span>
+    <span>0₀</span>
+    <span class="arrow">→</span>
+    <span>0</span>
+    <span class="arrow">→</span>
+    <span>ℕ</span>
+  </div>
+  <div class="genesis-caption">void → dot → zero-zero → zero → number</div>
+</div>
+
+<p>
+  If you are running agent workloads in a domain where "we did not observe it in testing" is not an
+  acceptable answer, the right next step is not more test coverage. It is to write down the
+  property you are actually promising and prove it. Everything else follows.
+</p>
+
+<a class="cross-link" href="first-proof.html">
+  <div class="cl-label">Companion piece · 10 minutes</div>
+  <div class="cl-title">Your first Lean 4 proof, in five moves</div>
+  <p class="cl-desc">A hands-on primer for readers who have never opened a proof assistant. No installation, runs statically in the browser.</p>
+  <div class="cl-cta">Open →</div>
+</a>
+
+<footer>
+  <p>
+    <strong>LeanDFumt Note · 2026-08-25</strong> — part of the
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt</a>
+    library by 藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project.
+    Licensed Apache-2.0. ORCID
+    <a href="https://orcid.org/0009-0004-6019-9258">0009-0004-6019-9258</a>.
+  </p>
+</footer>
+
+</body>
+</html>
