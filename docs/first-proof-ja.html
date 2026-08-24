@@ -1,20 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LeanDFumt — Your First Lean 4 Proof</title>
-  <meta name="description" content="A hands-on Lean 4 walkthrough for readers who have never opened a proof assistant. Five moves, no installation, ten minutes.">
+  <title>LeanDFumt — はじめての Lean 4 証明</title>
+  <meta name="description" content="Lean 4 で最初の証明を書くための日本語チュートリアル。定理『0 + n = n』を五手で証明します。インストール不要、10分、スマホでも動く。">
   <link rel="stylesheet" href="style.css">
   <style>
-    /* Scoped additions for tutorial pages — reuses style.css tokens */
+    /* Scoped additions — reuses style.css tokens (matches first-proof.html) */
 
     .eyebrow {
       font-family: "SFMono-Regular", Consolas, monospace;
       font-size: .78em;
       color: var(--muted);
-      letter-spacing: .12em;
-      text-transform: uppercase;
+      letter-spacing: .1em;
       margin: 1em 0 .5em;
     }
     .deck {
@@ -23,7 +22,6 @@
       margin-top: .8em;
       max-width: 60ch;
     }
-
     .theorem-card {
       background: var(--code-bg);
       padding: 1.1em 1.4em;
@@ -50,10 +48,15 @@
       margin: .3em 0 0;
     }
 
-    .progress {
+    .progress-wrap {
       position: sticky;
       top: 0;
       background: var(--bg);
+      z-index: 5;
+      padding-bottom: .3em;
+      margin-bottom: 1.5em;
+    }
+    .progress {
       padding: .6em 0;
       margin: 1.5em 0 0;
       border-bottom: 1px solid var(--border);
@@ -64,13 +67,11 @@
       justify-content: space-between;
       align-items: center;
       gap: 1em;
-      z-index: 5;
     }
     .progress .p-step { color: var(--fg); }
     .progress .p-goals { color: var(--accent); }
     .progress .p-goals.zero { color: var(--ok-line); }
     .progress-bar {
-      grid-column: span 2;
       height: 2px;
       background: var(--border);
       margin-top: .4em;
@@ -84,14 +85,6 @@
       width: var(--pct, 20%);
       background: var(--accent);
       transition: width .22s ease;
-    }
-    .progress-wrap {
-      position: sticky;
-      top: 0;
-      background: var(--bg);
-      z-index: 5;
-      padding-bottom: .3em;
-      margin-bottom: 1.5em;
     }
 
     ol.steps { list-style: none; padding: 0; margin: 1.5em 0; }
@@ -112,14 +105,12 @@
     .step-tag {
       font-family: "SFMono-Regular", Consolas, monospace;
       font-size: .78em;
-      letter-spacing: .12em;
-      text-transform: uppercase;
+      letter-spacing: .1em;
       color: var(--accent);
       margin-bottom: .8em;
       display: block;
     }
 
-    /* InfoView reuses .block styling patterns from style.css */
     .infoview {
       border-left: 3px solid var(--note-line);
       background: var(--note-tint);
@@ -135,10 +126,9 @@
       background: var(--ok-tint);
     }
     .infoview-label {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: .72em;
-      letter-spacing: .12em;
-      text-transform: uppercase;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI", sans-serif;
+      font-size: .78em;
+      letter-spacing: .05em;
       color: var(--muted);
       font-weight: 600;
       margin-bottom: .5em;
@@ -158,10 +148,8 @@
     .goal { padding: .3em 0; }
     .goal + .goal { border-top: 1px dashed var(--border); margin-top: .5em; padding-top: .7em; }
     .goal-label {
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      font-size: .72em;
-      letter-spacing: .05em;
-      text-transform: uppercase;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+      font-size: .78em;
       color: var(--muted);
       margin-bottom: .3em;
     }
@@ -174,9 +162,9 @@
       margin: 1em 0 0;
       color: var(--fg);
       font-size: .96em;
+      line-height: 1.85;
     }
 
-    /* Lean pre — inherits from style.css .pre; add subtle keyword tint */
     pre.lean .kw { color: var(--accent); font-weight: 600; }
     pre.lean .cmt { color: var(--muted); font-style: italic; }
     pre.lean .str { color: var(--ok-line); }
@@ -208,54 +196,48 @@
 <nav class="crumbs">
   <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt</a> ›
   <a href="index.html">Docs</a> ›
-  First Proof
-  <span class="lang-switch"><strong>EN</strong> · <a href="first-proof-ja.html">JA</a></span>
+  はじめての Lean 4 証明
+  <span class="lang-switch"><a href="first-proof.html">EN</a> · <strong>JA</strong></span>
 </nav>
 
 <h1>
-  Your first Lean 4 proof
-  <span class="sub">A five-move walkthrough — no installation, ten minutes.</span>
+  はじめての Lean 4 証明
+  <span class="sub">五手で1つの定理を証明する — インストール不要・10分・スマホでも動く</span>
 </h1>
 
-<div class="eyebrow">A LeanDFumt tutorial · runs statically in the browser</div>
+<div class="eyebrow">LeanDFumt チュートリアル · ブラウザ内で静的に動作</div>
 
 <p class="deck">
-  A proof assistant is not a solver. It is a witness — it accepts your steps only if each one
-  is legal, and refuses everything else. This page walks through one small theorem so you can
-  feel that machinery from the outside.
+  証明支援系 (proof assistant) は「解く」ソフトウェアではなく、「認める」ソフトウェアです。あなたが書いた手数を1つずつ検査し、正当なものだけを受理し、それ以外は拒絶します。このページでは、その仕組みを外から実感するために、小さな定理を1つ、五手で証明していきます。
 </p>
 
-<h2>What you are about to witness</h2>
+<h2>ここで起きること</h2>
+
 <p>
-  Lean 4 is a proof assistant developed at Microsoft Research and now maintained by the Lean FRO.
-  Its trusted kernel — the part that actually decides whether a proof is valid — is roughly thirty
-  thousand lines of C++. Everything else in the ecosystem, including all of mathematics that has been
-  formalized in Lean, ultimately reduces to a term the kernel accepts.
-</p>
-<p>
-  You will prove one theorem: <em>for every natural number n, adding zero on the left returns n</em>.
-  It is trivial to <em>believe</em>. Proving it — from the definition of addition, without hand-waving,
-  in a way a machine will check — takes five moves.
-</p>
-<p>
-  The panel below the code, on each step, is a rendering of Lean's <em>InfoView</em> — the pane the
-  assistant uses to tell you which goals remain. Watch that panel. When it says <em>Goals accomplished</em>,
-  the theorem is proved.
+  Lean 4 は、Microsoft Research で生まれ、現在は Lean FRO が保守している証明支援系です。証明を実際に検査する信頼カーネル (trusted kernel) は約3万行の C++ で書かれています。Lean で書かれた数学のほぼ全て — そして、これから世界中で書かれる証明 — は、最終的にこのカーネルが受理する項へと還元されます。
 </p>
 
-<h2>The theorem</h2>
+<p>
+  これから証明する定理は1つ、<em>任意の自然数 n について、左に 0 を足すと n に戻る</em> という命題です。<em>信じる</em>のは簡単です。しかし、加法の定義から出発し、手抜きなしで、機械が検査できる形で <em>証明</em> するには、五手が必要です。
+</p>
+
+<p>
+  各ステップのコードの下にあるのは、Lean の <em>InfoView</em> — 証明支援系が「まだ残っている目標 (goals)」を教えてくれる欄 — を模したパネルです。このパネルを注視してください。ここに <em>Goals accomplished</em> と表示されたとき、定理は証明されたことになります。
+</p>
+
+<h2>証明する定理</h2>
 <div class="theorem-card">
   <div class="theorem-name">theorem  zero_add</div>
   <div class="theorem-statement">∀ n : Nat, &nbsp; 0 + n = n</div>
-  <div class="theorem-note">for every natural number n, zero plus n equals n</div>
+  <div class="theorem-note">任意の自然数 n について、0 + n は n に等しい</div>
 </div>
 
-<h2>The proof, one step at a time</h2>
+<h2>証明 — 一手ずつ</h2>
 
 <div class="progress-wrap">
   <div class="progress" aria-live="polite">
-    <span><span class="p-step" data-step-num>Step 1</span> of 5</span>
-    <span><span class="p-goals" data-goals-num>1</span> goal remaining</span>
+    <span><span class="p-step" data-step-num>ステップ 1</span> / 5</span>
+    <span>残り目標: <span class="p-goals" data-goals-num>1</span></span>
   </div>
   <div class="progress-bar" style="--pct: 20%"></div>
 </div>
@@ -263,156 +245,138 @@
 <ol class="steps">
 
   <li class="step" data-step="1" data-goals="1">
-    <span class="step-tag">Step 1 — declare the goal</span>
+    <span class="step-tag">STEP 1 — 目標を宣言する</span>
 <pre class="lean"><code><span class="kw">theorem</span> zero_add (n : <span class="kw">Nat</span>) : 0 + n = n := <span class="kw">by</span>
-  <span class="cmt">-- proof goes here</span>
+  <span class="cmt">-- ここに証明を書く</span>
   <span class="todo">sorry</span></code></pre>
     <div class="infoview">
-      <div class="infoview-label">Goals (1)</div>
+      <div class="infoview-label">目標 (1件)</div>
       <div class="goal">
         <span class="hyp">n : Nat</span>
         <span class="turnstile">⊢</span><span class="target">0 + n = n</span>
       </div>
     </div>
     <p class="explain">
-      We name the theorem and state it, then open a <em>by-block</em> — a tactic proof.
-      The keyword <code>sorry</code> is a placeholder promising a proof we haven't written yet.
-      The InfoView shows one open goal: given a natural number <code>n</code>, prove <code>0 + n = n</code>.
+      定理に名前をつけ、内容を宣言し、<em>by ブロック</em> — 戦術 (tactic) による証明 — を開きます。<code>sorry</code> は「まだ書いていない証明の代わり」を意味するプレースホルダです。InfoView には目標が1つ表示されています: 自然数 <code>n</code> が与えられたとき、<code>0 + n = n</code> を示せ、と。
     </p>
   </li>
 
   <li class="step" data-step="2" data-goals="2">
-    <span class="step-tag">Step 2 — induct on n</span>
+    <span class="step-tag">STEP 2 — n について帰納法を適用する</span>
 <pre class="lean"><code><span class="kw">theorem</span> zero_add (n : <span class="kw">Nat</span>) : 0 + n = n := <span class="kw">by</span>
   <span class="kw">induction</span> n <span class="kw">with</span>
   | zero =&gt; <span class="todo">sorry</span>
   | succ k ih =&gt; <span class="todo">sorry</span></code></pre>
     <div class="infoview">
-      <div class="infoview-label">Goals (2)</div>
+      <div class="infoview-label">目標 (2件)</div>
       <div class="goal">
-        <div class="goal-label">case zero</div>
+        <div class="goal-label">基底ケース (case zero)</div>
         <span class="turnstile">⊢</span><span class="target">0 + 0 = 0</span>
       </div>
       <div class="goal">
-        <div class="goal-label">case succ</div>
+        <div class="goal-label">帰納ステップ (case succ)</div>
         <span class="hyp">k : Nat</span>
         <span class="hyp">ih : 0 + k = k</span>
         <span class="turnstile">⊢</span><span class="target">0 + Nat.succ k = Nat.succ k</span>
       </div>
     </div>
     <p class="explain">
-      Induction splits the proof in two. The <em>base case</em> asks us to prove the statement when
-      <code>n</code> is zero. The <em>inductive case</em> asks: assuming the theorem already holds for
-      some <code>k</code> — that assumption is named <code>ih</code>, the <em>induction hypothesis</em> —
-      prove it for <code>k + 1</code>.
+      帰納法は証明を2つに分けます。<em>基底ケース</em>は <code>n = 0</code> のときの主張を示すことを要求し、<em>帰納ステップ</em>は「ある <code>k</code> について定理が成立している」という仮定 — これが <code>ih</code>、<em>帰納法の仮定</em> です — の下で、<code>k + 1</code> についても示せ、と要求します。
     </p>
   </li>
 
   <li class="step" data-step="3" data-goals="1">
-    <span class="step-tag">Step 3 — close the base case</span>
+    <span class="step-tag">STEP 3 — 基底ケースを閉じる</span>
 <pre class="lean"><code><span class="kw">theorem</span> zero_add (n : <span class="kw">Nat</span>) : 0 + n = n := <span class="kw">by</span>
   <span class="kw">induction</span> n <span class="kw">with</span>
   | zero =&gt; <span class="kw">rfl</span>
   | succ k ih =&gt; <span class="todo">sorry</span></code></pre>
     <div class="infoview">
-      <div class="infoview-label">Goals (1)</div>
+      <div class="infoview-label">目標 (1件)</div>
       <div class="goal">
-        <div class="goal-label">case succ</div>
+        <div class="goal-label">帰納ステップ (case succ)</div>
         <span class="hyp">k : Nat</span>
         <span class="hyp">ih : 0 + k = k</span>
         <span class="turnstile">⊢</span><span class="target">0 + Nat.succ k = Nat.succ k</span>
       </div>
     </div>
     <p class="explain">
-      <code>rfl</code> — short for <em>reflexivity</em> — closes any goal whose two sides are equal
-      <em>by definition</em>. Lean defines addition so that <code>0 + 0</code> reduces to <code>0</code>
-      without further work. One goal down; one remains.
+      <code>rfl</code> は <em>reflexivity</em> (反射律) の略で、両辺が <em>定義上等しい</em> 任意の目標を閉じます。Lean は加法を定義する際に、<code>0 + 0</code> が <code>0</code> にそのまま簡約されるように作られています。追加の作業なしで基底ケースは閉じます。目標が1つ減り、残り1つになりました。
     </p>
   </li>
 
   <li class="step" data-step="4" data-goals="1">
-    <span class="step-tag">Step 4 — unfold the successor</span>
+    <span class="step-tag">STEP 4 — 後者を展開する</span>
 <pre class="lean"><code><span class="kw">theorem</span> zero_add (n : <span class="kw">Nat</span>) : 0 + n = n := <span class="kw">by</span>
   <span class="kw">induction</span> n <span class="kw">with</span>
   | zero =&gt; <span class="kw">rfl</span>
   | succ k ih =&gt; <span class="kw">rw</span> [Nat.add_succ]</code></pre>
     <div class="infoview">
-      <div class="infoview-label">Goals (1)</div>
+      <div class="infoview-label">目標 (1件)</div>
       <div class="goal">
-        <div class="goal-label">case succ</div>
+        <div class="goal-label">帰納ステップ (case succ)</div>
         <span class="hyp">k : Nat</span>
         <span class="hyp">ih : 0 + k = k</span>
         <span class="turnstile">⊢</span><span class="target">Nat.succ (0 + k) = Nat.succ k</span>
       </div>
     </div>
     <p class="explain">
-      The lemma <code>Nat.add_succ</code> rewrites <code>a + Nat.succ b</code> into
-      <code>Nat.succ (a + b)</code>. The <code>rw</code> tactic applies that rewrite left-to-right on
-      the goal. Notice how the <em>shape</em> of the goal changed: we now need to prove
-      <code>Nat.succ (0 + k) = Nat.succ k</code>.
+      補題 <code>Nat.add_succ</code> は <code>a + Nat.succ b</code> を <code>Nat.succ (a + b)</code> に書き換える等式です。戦術 <code>rw</code> はこの書き換えを目標に左から右へ適用します。目標の <em>形</em> が変わったことに注目してください: 今や証明すべきは <code>Nat.succ (0 + k) = Nat.succ k</code> です。
     </p>
   </li>
 
   <li class="step" data-step="5" data-goals="0">
-    <span class="step-tag">Step 5 — apply the induction hypothesis</span>
+    <span class="step-tag">STEP 5 — 帰納法の仮定を適用する</span>
 <pre class="lean"><code><span class="kw">theorem</span> zero_add (n : <span class="kw">Nat</span>) : 0 + n = n := <span class="kw">by</span>
   <span class="kw">induction</span> n <span class="kw">with</span>
   | zero =&gt; <span class="kw">rfl</span>
   | succ k ih =&gt; <span class="kw">rw</span> [Nat.add_succ, ih]</code></pre>
     <div class="infoview infoview-done">
-      <div class="infoview-label">Goals accomplished</div>
-      <div class="done-text">No goals · theorem proved</div>
+      <div class="infoview-label">Goals accomplished — すべての目標が達成されました</div>
+      <div class="done-text">残り目標なし · 定理は証明されました</div>
     </div>
     <p class="explain">
-      Rewriting with <code>ih</code> — our assumption that <code>0 + k = k</code> — reduces the goal
-      to <code>Nat.succ k = Nat.succ k</code>. Lean discharges that reflexively and closes the proof.
-      The InfoView is empty. Every path through the theorem has been checked.
+      仮定 <code>ih</code> — 「<code>0 + k = k</code>」 — で書き換えると、目標は <code>Nat.succ k = Nat.succ k</code> に縮み、Lean はこれを反射的に閉じ、証明全体を完了します。InfoView は空になりました。定理を通るすべての経路が検査されたということです。
     </p>
   </li>
 
 </ol>
 
-<h2>What just happened</h2>
+<h2>いま何が起きたのか</h2>
 <p>
-  Every step you saw was checked, in real time, against the definitions of <code>Nat</code>,
-  <code>0</code>, <code>+</code>, and <code>=</code>. No test suite ran. No fuzzer sampled inputs.
-  A verifier reduced the whole proof to axioms of type theory and confirmed that the resulting term
-  type-checks. The theorem is now true not because anyone believes it, but because refusing to
-  believe it would require refuting Lean's kernel — a much harder problem than the one we solved.
+  あなたが書いた各ステップは、<code>Nat</code>、<code>0</code>、<code>+</code>、<code>=</code> の定義に照らしてリアルタイムに検査されました。テストは1本も走っていません。ファジングもしていません。検査器は証明全体を型理論の公理まで還元し、結果として得られた項が型検査を通ることを確認しました。この定理がいま真であるのは、誰かが信じているからではなく、真であることを否定するためには Lean のカーネルそのものを反証する必要があり、それは私たちが解いた問題よりずっと難しいから、です。
 </p>
 <p>
-  This is the atomic operation of formal verification. It scales. Cryptographic protocols, compiler
-  passes, distributed consensus, and — increasingly — AI agent behavior are being proved this way,
-  one theorem at a time. What you just watched is not a toy that only works on toy problems. It is
-  the beginning of the same machinery.
+  これが形式検証の原子操作です。この規模は上に伸びます。暗号プロトコル、コンパイラのパス、分散合意、そして — 増えつつあるのが — AI エージェントの挙動が、こうして1定理ずつ証明されています。あなたがいま見たものは、玩具の問題にしか通用しない玩具ではありません。同じ機械の <em>入口</em> です。
 </p>
 
-<h2>Where to go from here</h2>
+<h2>次に読むもの</h2>
 <ul class="next-links">
   <li>
-    <a href="https://lean-lang.org/theorem_proving_in_lean4/" rel="noopener">Theorem Proving in Lean 4</a>
-    <span class="note">— the canonical introduction, by Avigad, de Moura, Kong, and Ullrich</span>
-  </li>
-  <li>
-    <a href="https://adam.math.hhu.de/#/g/leanprover-community/NNG4" rel="noopener">Natural Number Game</a>
-    <span class="note">— prove your first hundred theorems in a browser, no install</span>
-  </li>
-  <li>
     <a href="https://aconite-ac.github.io/theorem_proving_in_lean4_ja/" rel="noopener">Theorem Proving in Lean 4 (日本語訳)</a>
-    <span class="note">— by aconite-ac, thorough and well-maintained</span>
+    <span class="note">— aconite-ac さんによる包括的な日本語訳。本を1冊読み切る覚悟がある方に</span>
+  </li>
+  <li>
+    <a href="https://adam.math.hhu.de/#/g/leanprover-community/NNG4" rel="noopener">Natural Number Game (英語)</a>
+    <span class="note">— ブラウザ内で最初の100定理を証明できるゲーム。インストール不要</span>
+  </li>
+  <li>
+    <a href="https://lean-lang.org/theorem_proving_in_lean4/" rel="noopener">Theorem Proving in Lean 4 (英語原著)</a>
+    <span class="note">— Avigad、de Moura、Kong、Ullrich による正典的入門</span>
   </li>
   <li>
     <a href="https://github.com/fc0web/lean-d-fumt8" rel="noopener">LeanDFumt · D-FUMT₈</a>
-    <span class="note">— 29 zero-sorry theorems for eight-valued logic in pure Lean 4, no Mathlib. See the <a href="agent-verification.html">companion essay</a> for the AI-agent-safety angle, and the <a href="index.html">error database</a> for common Lean 4 pitfalls.</span>
+    <span class="note">— Mathlib 非依存・pure Lean 4 で書かれた8値論理の zero-sorry ライブラリ (29定理)。関連読み物として <a href="agent-verification.html">Agent verification, formally (英語ノート)</a> と <a href="index.html">エラー辞書 (英語)</a> があります。</span>
+  </li>
+  <li>
+    <a href="first-proof.html" rel="noopener">Your first Lean 4 proof (English original)</a>
+    <span class="note">— このページの英語版</span>
   </li>
 </ul>
 
 <footer>
   <p>
-    <strong>LeanDFumt Tutorial</strong> — part of the
-    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt</a>
-    library by 藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026.
-    Licensed Apache-2.0. Lean 4.27.0. Proof states rendered statically — no telemetry, no cookies.
+    <strong>LeanDFumt チュートリアル (日本語)</strong> — <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt</a> ライブラリの付属資料。著者: 藤本伸樹 (Nobuki Fujimoto)、Rei-AIOS プロジェクト、2026年。ライセンス: Apache-2.0。Lean 4.27.0。証明状態は静的にレンダリング — テレメトリなし・Cookie なし。
   </p>
 </footer>
 
@@ -427,7 +391,7 @@
     let currentStep = 1;
 
     const setProgress = (n, g) => {
-      stepNum.textContent = 'Step ' + n;
+      stepNum.textContent = 'ステップ ' + n;
       goalsNum.textContent = g;
       bar.style.setProperty('--pct', (n / steps.length * 100) + '%');
       goalsWrap.classList.toggle('zero', g === 0);
