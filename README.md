@@ -77,6 +77,14 @@ example : ¬d .BOTH = .BOTH := by decide
 example : (.TRUE ∨d .NEITHER) = .TRUE := by decide
 ```
 
+## Documentation
+
+Companion pages published under [`docs/`](docs/) via GitHub Pages:
+
+- **[Error Database](https://fc0web.github.io/lean-d-fumt8/)** — 11 common Lean 4 errors, each with a minimal reproduction and a fix that preserves the zero-sorry, no-Mathlib discipline. Cross-references the `CHECKER_SPEC` locators. English.
+- **[Your first Lean 4 proof](https://fc0web.github.io/lean-d-fumt8/first-proof.html)** — a five-move interactive tutorial for readers who have never opened a proof assistant. Ten minutes, no installation, runs statically in the browser. Also available in [日本語](https://fc0web.github.io/lean-d-fumt8/first-proof-ja.html).
+- **[Agent verification, formally](https://fc0web.github.io/lean-d-fumt8/agent-verification.html)** — a note on why sampling-based agent evaluation is a floor not a ceiling, with a complete Lean 4 harness proof in ~40 lines. English.
+
 ## Design choices
 
 ### Why no Mathlib dependency?
