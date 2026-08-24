@@ -98,13 +98,27 @@ name = "LeanDFumtMathlibBridge"    # optional side library
 <h2>Detection: CHECKER_SPEC</h2>
 <div class="block block-note">
   <p>
-    <strong>Rule:</strong> <code>boundary_report(kind = "import")</code>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    behaviour depends on the build. If Mathlib is <em>not</em> resolvable
+    in the project's build, <code>verify()</code> returns
+    <code>UNDECIDED / MISSING_AXIOM</code> with <code>detail</code>
+    carrying the <code>unknown module 'Mathlib.…'</code> diagnostic. If
+    Mathlib <em>is</em> present in the build, <code>verify()</code>
+    returns <code>VALID</code> and the no-Mathlib policy violation is
+    invisible through <code>verify()</code> alone — enforce it as a
+    pre-check on <code>import</code> lines under
+    <code>defaultTargets</code> before the file reaches
+    <code>verify()</code>, using the same pattern as
+    <a href="axiom-bypass.html">axiom bypass</a>.
   </p>
   <p>
-    Enumerate every <code>import</code> line under
-    <code>defaultTargets</code>. Flag any whose module path begins with
-    <code>Mathlib</code>. Optional bridge libraries opted out of the
-    default target are ignored by this rule but reported separately.
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>boundary_report(kind = "import")</code> enumerates every
+    <code>import</code> line under <code>defaultTargets</code>. Flag any
+    whose module path begins with <code>Mathlib</code>. Optional bridge
+    libraries opted out of the default target are ignored by this rule
+    but reported separately. Layer 2 is a thin wrapper over v0 and does
+    not introduce independent decision logic.
   </p>
 </div>
 

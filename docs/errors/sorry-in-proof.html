@@ -80,13 +80,26 @@ example : DFUMT8.neg .BOTH = .BOTH := by decide</code></pre>
 <h2>Detection: CHECKER_SPEC</h2>
 <div class="block block-note">
   <p>
-    <strong>Rule:</strong> <code>locate_first_error(kind = "sorry")</code>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    Lean emits <code>declaration uses 'sorry'</code> as a <em>warning</em>,
+    not an error, so the file compiles and can even emit
+    <code>VERDICT VALID</code> on stdout. The v0 checker wrapper MUST
+    intercept the <code>sorry</code> warning in Lean's stderr and return
+    <code>UNDECIDED / MISSING_AXIOM</code> with the warning line preserved
+    in <code>detail</code> — <code>MISSING_AXIOM</code> is the reason code
+    that means "a required proof step is not present." This is the single
+    most important v0 discipline for a zero-sorry project: the check
+    belongs at the wrapper, not at the source.
   </p>
   <p>
-    Traverse the elaborated declaration tree in source order; return the
-    position of the first <code>Expr.mvar</code> whose head symbol
-    resolves to <code>sorryAx</code>. If any is found, the file fails the
-    zero-sorry gate regardless of whether Lean itself would only warn.
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>locate_first_error(kind = "sorry")</code> traverses the
+    elaborated declaration tree in source order and returns the position
+    of the first <code>Expr.mvar</code> whose head symbol resolves to
+    <code>sorryAx</code>. If any is found, the file fails the zero-sorry
+    gate regardless of whether Lean itself would only warn. Layer 2 is a
+    thin wrapper over v0 and does not introduce independent decision
+    logic.
   </p>
 </div>
 

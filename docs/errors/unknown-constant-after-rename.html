@@ -86,14 +86,27 @@ example (n : Nat) : n.succ = n + 1 :=
 <h2>Detection: CHECKER_SPEC</h2>
 <div class="block block-note">
   <p>
-    <strong>Rule:</strong> <code>locate_first_error(kind = "unknown_constant")</code>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    Lean rejects the file with <code>unknown constant '…'</code> and no
+    <code>VERDICT</code> line is emitted. <code>verify()</code> returns
+    <code>UNDECIDED / MISSING_AXIOM</code> — the reason code for "a
+    required constant, axiom, or lemma is not present in the environment"
+    — with the offending name preserved in <code>detail</code>. A
+    concentration of <code>MISSING_AXIOM</code> under
+    <code>stats().reason_breakdown</code> whose <code>detail</code> lines
+    lead with <code>unknown constant</code> is the direct v0 signal to
+    trigger a <code>rename_map.json</code> refresh, well before Layer 2's
+    automated rewrite path is available.
   </p>
   <p>
-    Return the position and the offending constant name from the first
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>locate_first_error(kind = "unknown_constant")</code> returns the
+    position and the offending constant name from the first
     <code>unknown constant</code> diagnostic. When cross-referenced against
     a <code>rename_map.json</code> (maintained per toolchain bump), this
     supports semi-automatic rewriting of old names to their current
-    equivalents.
+    equivalents. Layer 2 is a thin wrapper over v0 and does not introduce
+    independent decision logic.
   </p>
 </div>
 

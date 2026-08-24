@@ -82,18 +82,28 @@ theorem and_both_false : DFUMT8.and .BOTH .FALSE = .FALSE := by decide</code></p
 <h2>Detection: CHECKER_SPEC</h2>
 <div class="block block-note">
   <p>
-    <strong>Rule:</strong> <code>boundary_report(kind = "axiom")</code>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    not directly detectable through <code>verify()</code> alone. A file
+    that declares a new axiom to close a goal still compiles, so
+    <code>verify()</code> returns <code>VALID</code> on the downstream
+    theorem. Enforcement in v0 is a pre-check that runs <em>before</em>
+    handing the file to <code>verify()</code>: enumerate
+    <code>axiom</code> declarations and reject any not in the project's
+    <code>AxiomWhitelist.lean</code>. Rejected files never enter
+    <code>stats()</code>, keeping <code>decision_rate</code> an honest
+    measure of what was verified rather than accepted-by-policy.
   </p>
   <p>
-    Enumerate every <code>axiom</code> declaration in the project (via
-    <code>Lean.Environment.axioms</code>) and filter out those in Lean
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>boundary_report(kind = "axiom")</code> enumerates every
+    <code>axiom</code> declaration in the project (via
+    <code>Lean.Environment.axioms</code>) and filters out those in Lean
     core. Any remaining declaration is a policy violation and must appear
     in the project's <code>AxiomWhitelist.lean</code> to be accepted.
-  </p>
-  <p>
     Cross-check with <code>#print axioms &lt;theorem&gt;</code> at build
     time to verify each theorem's actual axiom dependencies match the
-    whitelist.
+    whitelist. Layer 2 is a thin wrapper over v0 and does not introduce
+    independent decision logic.
   </p>
 </div>
 

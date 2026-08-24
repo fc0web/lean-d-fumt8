@@ -87,13 +87,26 @@ example : (DFUMT8.TRUE.toTernary : Int).toNat.toFloat &gt; 0.0 := by native_deci
 <h2>Detection: CHECKER_SPEC</h2>
 <div class="block block-note">
   <p>
-    <strong>Rule:</strong> <code>locate_first_error(kind = "type_mismatch")</code>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    Lean rejects elaboration, so no <code>VERDICT</code> line is emitted
+    on stdout. <code>verify()</code> returns
+    <code>UNDECIDED / UNSUPPORTED_SYNTAX</code> with the first
+    <code>type mismatch</code> diagnostic carried in <code>detail</code>.
+    A concentration of <code>UNSUPPORTED_SYNTAX</code> under
+    <code>stats().reason_breakdown</code> whose <code>detail</code> lines
+    lead with <code>type mismatch</code> is the direct v0 signal that
+    this error class is active in the workload — and per spec §7 it
+    becomes the next sprint.
   </p>
   <p>
-    Return the position and pair <code>(actual_type, expected_type)</code>
-    of the first elaboration failure whose Lean-emitted category is
-    <code>type mismatch</code>. Useful for downstream tooling that suggests
-    the corresponding <code>.toX</code> or <code>X.ofY</code> coercion.
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>locate_first_error(kind = "type_mismatch")</code> returns the
+    position and pair <code>(actual_type, expected_type)</code> of the
+    first elaboration failure whose Lean-emitted category is
+    <code>type mismatch</code>. Useful for downstream tooling that
+    suggests the corresponding <code>.toX</code> or <code>X.ofY</code>
+    coercion. Layer 2 is a thin wrapper over v0 and does not introduce
+    independent decision logic.
   </p>
 </div>
 
