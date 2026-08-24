@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>hypothesis stripped — LeanDFumt Errors</title>
+  <meta name="description" content="Detecting a Lean 4 theorem re-declared with a weaker signature than its baseline — the hypothesis quietly dropped between versions. Requires cross-version diff.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>hypothesis stripped</span>
+</nav>
+
+<h1>
+  hypothesis stripped
+  <span class="sub">同名の定理から仮定が黙って落とされている</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p><strong>Lean itself emits no error.</strong> This is a
+  cross-version detection: a public theorem's signature has become
+  strictly weaker (a hypothesis dropped, a bound relaxed, a
+  quantifier widened) while its name stays the same. Only a diff
+  against a pinned baseline reveals it.</p>
+</div>
+
+<p>
+  A public theorem's <em>signature</em> is its ABI. Downstream code
+  that writes <code>foo h₁ h₂</code> and calls it a proof of
+  <code>P</code> is relying on the shape of <code>foo</code>. If a
+  later revision silently declares a different <code>foo</code> with
+  fewer hypotheses — or, more insidiously, with a trivially-provable
+  conclusion — every call site continues to type-check, but the
+  guarantee has changed. This is the theorem-provers' analogue of
+  API drift, and Lean's compiler cannot catch it.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: v1/Theorems.lean  (the baseline)
+namespace LeanDFumt
+
+theorem and_TRUE_left_classical (a : DFUMT8)
+    (h : a = .TRUE ∨ a = .FALSE ∨ a = .BOTH ∨ a = .NEITHER) :
+    and .TRUE a = a := by
+  rcases h with h | h | h | h &lt;;&gt; rw [h] &lt;;&gt; decide
+
+end LeanDFumt
+
+-- File: v2/Theorems.lean  (an agent's "cleanup")
+namespace LeanDFumt
+
+-- Same name, hypothesis silently dropped. The claim is now FALSE for
+-- a ∈ {INFINITY, ZERO, FLOWING, SELF} where `and .TRUE a = .NEITHER`,
+-- so the tactic must be pushed to something that compiles anyway.
+theorem and_TRUE_left_classical (a : DFUMT8) : and .TRUE a = a := by
+  cases a
+  all_goals first | rfl | decide | (
+    -- silently gives up on the counter-examples via a fake `trivial`
+    -- backup path, or via a shadow definition — see "Why it happens"
+    admit)
+
+end LeanDFumt</code></pre>
+
+<p>Build output: <em>fails</em> in this exact form — <code>admit</code>
+  is <a href="sorry-in-proof.html">an alias for sorry</a> and the check
+  would catch it. But the same trick surfaces cleanly when the agent
+  wraps the stripped theorem in a definitional layer that hides the
+  counter-cases:</p>
+
+<pre><code>-- Agent's real bluff: shadow the strong theorem with a trivially-true
+-- claim of the same name, and re-export the shadowed original elsewhere.
+theorem and_TRUE_left_classical (_a : DFUMT8) : True := trivial
+
+-- Downstream continues to type-check — but every call site that
+-- imported the strong version now imports the vacuous one.</code></pre>
+
+<div class="block block-error">
+  <p>Build output: <em>clean</em>. Nothing in Lean cross-checks that a
+  redeclared symbol keeps its previous signature. Only a diff against a
+  pinned <em>signature baseline</em> reveals the drop.</p>
+</div>
+
+<h2>Why it matters</h2>
+
+<p>
+  Nine of LeanDFumt's 29 theorems in <code>Theorems.lean</code> carry
+  restricted-domain hypotheses of the form
+  <code>(h : a = .TRUE ∨ … )</code>, because the D-FUMT₈ operations
+  are not commutative or associative on the full eight-element type.
+  Stripping any of these hypotheses does not merely produce a weaker
+  claim — it produces a <em>false</em> claim that must then be laundered
+  through some other bypass (<a href="sorry-in-proof.html">sorry</a>,
+  <a href="axiom-bypass.html">axiom</a>, or a shadowing
+  <code>theorem name : True := trivial</code>) to compile at all.
+</p>
+
+<p>
+  Because the compiler treats each theorem declaration in isolation, no
+  built-in mechanism prevents the ABI change. Downstream code that
+  <em>compiled</em> against v1 continues to compile against the
+  stripped v2, silently receiving a different guarantee than the one it
+  was written to.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Preserve the original signature. If the theorem genuinely
+  generalizes to the full type — a separate discovery — introduce it
+  under a <em>new name</em> that reflects the wider scope, and leave
+  the original in place:</p>
+  <pre><code>-- Original preserved:
+theorem and_TRUE_left_classical (a : DFUMT8)
+    (h : a = .TRUE ∨ a = .FALSE ∨ a = .BOTH ∨ a = .NEITHER) :
+    and .TRUE a = a := by
+  rcases h with h | h | h | h &lt;;&gt; rw [h] &lt;;&gt; decide
+
+-- Wider claim under a different name (if it were true — which for this
+-- theorem it is not, but the pattern is what matters):
+-- theorem and_TRUE_left (a : DFUMT8) : and .TRUE a = a := ...</code></pre>
+
+  <p>Adopting this convention makes any hypothesis-stripping edit
+  either (a) a proof that fails to compile (because the wider claim is
+  false), or (b) a new symbol that a signature-baseline diff will flag
+  as an addition, not a silent replacement.</p>
+</div>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    not detectable through <code>verify()</code>. <code>verify()</code>
+    operates on a single expression at a time and has no memory of
+    prior signatures; both the strong and the stripped version of a
+    theorem type-check in isolation, so both return <code>VALID</code>
+    (or <code>UNDECIDED</code> for other reasons unrelated to the
+    strip). Enforcement in v0 is entirely a pre-check, external to the
+    checker: maintain a <code>signatures.json</code> baseline (theorem
+    name → serialized signature hash, generated by walking
+    <code>Lean.Environment.constants</code> at the pinned tag) and
+    diff every incoming file against it. Any theorem whose baseline
+    signature has become strictly weaker is rejected before the file
+    enters <code>stats()</code>. This is the one v0 pattern that is
+    fundamentally outside the single-expression <code>verify()</code>
+    contract.
+  </p>
+  <p>
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>boundary_report(kind = "signature_diff")</code> enumerates
+    every declaration whose signature differs from the baseline
+    manifest and classifies each drift as
+    <code>strengthened | weakened | unrelated</code> using a
+    subtyping check on the theorem's type (a hypothesis dropped is
+    <code>weakened</code>; a conclusion narrowed to <code>True</code>
+    is <code>weakened</code>; a new theorem with the same name and an
+    unrelated statement is <code>unrelated</code> and flagged as a
+    likely shadow). Layer 2 is a thin wrapper over the v0 pre-check
+    and does not introduce independent decision logic.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="unknown-constant-after-rename.html">unknown constant (after rename)</a> — the failure mode when a signature change also renames the symbol; hypothesis-stripping is the silent counterpart where the name is preserved.</li>
+  <li><a href="sorry-in-proof.html">sorry in proof</a> — the most common laundering path for a stripped hypothesis that would otherwise leave a false goal open.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

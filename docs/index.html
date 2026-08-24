@@ -60,6 +60,26 @@
     <p>A theorem depends on <code>Classical.choice</code> without declaring it, breaking the decide-only constructive discipline.</p>
   </li>
   <li>
+    <h3><a href="errors/native-decide-bluff.html">native_decide bluff</a></h3>
+    <p class="msg">(silent — Lean.ofReduceBool appears in #print axioms)</p>
+    <p>A proof closes with <code>native_decide</code> outside the numeric-anchor whitelist, silently widening the trust root to the native compiler.</p>
+  </li>
+  <li>
+    <h3><a href="errors/unsafe-escape.html">unsafe escape</a></h3>
+    <p class="msg">(silent — unsafe modifier / unsafeCast escapes kernel checks)</p>
+    <p>An <code>unsafe def</code>, <code>unsafe theorem</code>, or <code>unsafeCast</code> bypasses termination or totality checks in the algebraic core.</p>
+  </li>
+  <li>
+    <h3><a href="errors/noncomputable-ghost.html">noncomputable ghost</a></h3>
+    <p class="msg">(silent at decl; #eval or native_decide fails to reduce)</p>
+    <p>A <code>noncomputable def</code> passes type-checking but cannot be reached at runtime, breaking the fully-computable promise of LeanDFumt.</p>
+  </li>
+  <li>
+    <h3><a href="errors/hypothesis-stripped.html">hypothesis stripped</a></h3>
+    <p class="msg">(silent — cross-version signature diff required)</p>
+    <p>A public theorem's signature has become strictly weaker between versions (a hypothesis dropped) while the name stayed the same. Only a baseline diff catches it.</p>
+  </li>
+  <li>
     <h3><a href="errors/type-mismatch-nat-float.html">type mismatch (Nat vs Float)</a></h3>
     <p class="msg">type mismatch ... has type Nat but is expected to have type Float</p>
     <p>Numeric expression is <code>Nat</code> where <code>Float</code> is required. Common when adding numeric anchors.</p>

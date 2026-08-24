@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>native_decide bluff — LeanDFumt Errors</title>
+  <meta name="description" content="Detecting a Lean 4 proof that closes with native_decide outside the whitelisted numeric anchor. Preserves the kernel-checked discipline of LeanDFumt.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>native_decide bluff</span>
+</nav>
+
+<h1>
+  native_decide bluff
+  <span class="sub"><code>native_decide</code> でカーネル検査を回避している</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p><strong>Lean itself emits no error.</strong> This is a policy-level
+  detection: any use of <code>native_decide</code> outside the project's
+  designated numeric-anchor module is flagged as a pre-check.</p>
+</div>
+
+<p>
+  <code>native_decide</code> is a legitimate tactic, but it works by
+  compiling the goal to native code and <em>trusting the compiled
+  binary</em>. Unlike <code>decide</code> (which produces a term the
+  Lean kernel re-checks), <code>native_decide</code> extends the trust
+  root of every theorem it closes to include the native compiler, the
+  runtime, and any <code>@[implemented_by]</code> attributes on
+  transitively-called functions. This is fine for a small, audited
+  numeric anchor. It is not fine as a general-purpose tactic under the
+  kernel-checked discipline LeanDFumt advertises.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: BadNativeDecide.lean
+import LeanDFumt
+
+namespace LeanDFumt
+
+-- The library provides `and_FALSE_left` as a `decide`-proved theorem.
+-- An agent submits a "replacement" using native_decide — the tactic
+-- looks equivalent, but the trust story changes silently.
+theorem and_FALSE_left_native (a : DFUMT8) :
+    and .FALSE a = .FALSE := by
+  cases a <;> native_decide
+
+end LeanDFumt</code></pre>
+
+<p>Build output: <em>clean</em>. Now compare the trust root:</p>
+
+<div class="block block-error">
+  <pre><code>#print axioms LeanDFumt.and_FALSE_left
+-- 'LeanDFumt.and_FALSE_left' does not depend on any axioms
+
+#print axioms LeanDFumt.and_FALSE_left_native
+-- 'LeanDFumt.and_FALSE_left_native' depends on axioms:
+--   Lean.ofReduceBool</code></pre>
+</div>
+
+<p>
+  <code>Lean.ofReduceBool</code> is the marker axiom introduced by
+  <code>native_decide</code>. Its presence means "the theorem's truth
+  was decided by native compilation, not by the Lean kernel." The two
+  theorems above are propositionally equivalent, but only one is
+  kernel-checked.
+</p>
+
+<h2>Why it matters</h2>
+
+<p>
+  LeanDFumt's <code>Theorems.lean</code> uses <code>native_decide</code>
+  in exactly one place — the numeric anchor
+  <code>toFloat_TRUE_pos</code>, which necessarily involves
+  <code>Float</code> arithmetic that the kernel cannot reduce. Every
+  other theorem in the library is closed by <code>decide</code>,
+  <code>rfl</code>, or <code>cases … &lt;;&gt; decide</code>. This
+  discipline is what lets the README claim:
+</p>
+
+<blockquote>
+  All proved by <code>decide</code> / <code>native_decide</code> on the
+  finite type.
+</blockquote>
+
+<p>
+  Silently expanding the use of <code>native_decide</code> widens the
+  trust root without acknowledgement. An
+  <code>@[implemented_by native_lie]</code> attribute anywhere in the
+  transitive call graph would then be sufficient to make a false theorem
+  compile.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Replace <code>native_decide</code> with <code>decide</code>
+  wherever the goal can be reduced by the kernel — on the finite
+  <code>DFUMT8</code> type this is almost always the case:</p>
+  <pre><code>theorem and_FALSE_left (a : DFUMT8) : and .FALSE a = .FALSE := by
+  cases a &lt;;&gt; decide</code></pre>
+
+  <p>Verify the fix by re-checking the axiom dependencies:</p>
+  <pre><code>#print axioms LeanDFumt.and_FALSE_left
+-- 'LeanDFumt.and_FALSE_left' does not depend on any axioms</code></pre>
+
+  <p>If <code>decide</code> genuinely cannot close the goal — for
+  example because it involves <code>Float</code> or another type the
+  kernel cannot reduce — the theorem belongs in the numeric-anchor
+  module (see <code>Theorems.lean</code>'s
+  <code>toFloat_TRUE_pos</code>), not in the algebraic core.</p>
+</div>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    not directly detectable through <code>verify()</code> alone. A file
+    that closes proofs with <code>native_decide</code> still compiles
+    and <code>verify()</code> returns <code>VALID</code>. Enforcement in
+    v0 is a two-step pre-check that runs <em>after</em> compilation but
+    <em>before</em> the file is admitted to <code>stats()</code>: (a)
+    grep for <code>native_decide</code> occurrences outside the
+    designated numeric-anchor module; (b) run
+    <code>#print axioms &lt;theorem&gt;</code> and reject the file if
+    <code>Lean.ofReduceBool</code> appears in an axiom list belonging
+    to a theorem declared outside the anchor. Rejected files never
+    enter <code>stats()</code>.
+  </p>
+  <p>
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>locate_first_error(kind = "native_decide")</code> traverses
+    the elaborated declaration tree in source order and returns the
+    position of the first <code>native_decide</code> tactic invocation
+    whose enclosing module is not on the anchor whitelist. When paired
+    with <code>Lean.Environment</code> introspection, this can also
+    surface any <code>@[implemented_by]</code> attributes in the
+    transitive call graph — the amplifier that turns a benign
+    <code>native_decide</code> into a forgeable one. Layer 2 is a thin
+    wrapper over v0 and does not introduce independent decision logic.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="axiom-bypass.html">axiom bypass</a> — the same pattern at the explicit-axiom boundary; <code>native_decide</code> is the implicit version.</li>
+  <li><a href="classical-choice-smuggled.html">Classical.choice smuggled</a> — the other silent trust-root expansion.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

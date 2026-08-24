@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>unsafe escape — LeanDFumt Errors</title>
+  <meta name="description" content="Detecting a Lean 4 unsafe def or unsafe theorem that bypasses the totality / kernel-check discipline. Preserves the safe-only guarantee of LeanDFumt.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>unsafe escape</span>
+</nav>
+
+<h1>
+  unsafe escape
+  <span class="sub"><code>unsafe</code> 修飾で totality / カーネル検査を回避</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p><strong>Lean itself emits no error.</strong> This is a policy-level
+  detection: any <code>unsafe def</code>, <code>unsafe theorem</code>,
+  or use of <code>unsafeCast</code> in the project is flagged as a
+  pre-check.</p>
+</div>
+
+<p>
+  Lean 4's <code>unsafe</code> keyword exists to interoperate with FFI
+  and low-level primitives that the kernel cannot verify. Uses include
+  <code>unsafeCast</code> (arbitrary type coercion),
+  <code>unsafe def</code> (skip termination check), and
+  <code>unsafe theorem</code> (skip kernel re-check of the proof term).
+  Each of these is legitimate in its niche. None of them belong in an
+  <em>algebraic</em> library that advertises kernel-checked totality —
+  every use is a hole punched in the very guarantee LeanDFumt trades on.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: BadUnsafe.lean
+import LeanDFumt
+
+namespace LeanDFumt
+
+/-- Non-terminating recursion — Lean would normally reject this,
+    but `unsafe` silences the termination check. -/
+unsafe def force_neg : DFUMT8 → DFUMT8
+  | a => force_neg (DFUMT8.neg a)
+
+/-- `unsafeCast` — an arbitrary bit-pattern reinterpretation. -/
+unsafe def cast_to_TRUE (n : Nat) : DFUMT8 := unsafeCast n
+
+/-- Theorem that trusts the unsafe cast, closed by native_decide. -/
+unsafe theorem cast_zero_is_TRUE : cast_to_TRUE 0 = .TRUE := by
+  native_decide
+
+end LeanDFumt</code></pre>
+
+<p>Build output: <em>clean</em>. The file compiles, and downstream code
+  that imports the module sees <code>cast_zero_is_TRUE</code> as if it
+  were an ordinary theorem — unless it also carries the
+  <code>unsafe</code> attribute forward (which most callers do not
+  audit).</p>
+
+<h2>Why it matters</h2>
+
+<p>
+  LeanDFumt's <code>Basic.lean</code> declares
+  <code>inductive DFUMT8</code> as a finite, decidable type with total
+  operations. Every theorem in <code>Theorems.lean</code> depends on
+  that totality. Introducing an <code>unsafe def</code> anywhere in the
+  library breaks the property downstream users implicitly assume: that
+  every function terminates and every theorem was checked by the Lean
+  kernel.
+</p>
+
+<p>
+  <code>unsafeCast</code> is particularly hazardous because it does not
+  merely widen the trust root — it invalidates the type system's own
+  soundness locally. A downstream <code>decide</code> on a value
+  produced by <code>unsafeCast</code> can report anything.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Delete the <code>unsafe</code> modifier and rewrite the definition
+  or proof to satisfy the kernel. For a pattern-matched recursion on
+  <code>DFUMT8</code>, structural recursion always suffices — the type
+  has eight constructors and no self-reference:</p>
+  <pre><code>-- Safe replacement, no `unsafe`:
+def double_neg : DFUMT8 → DFUMT8
+  | a => DFUMT8.neg (DFUMT8.neg a)
+
+theorem double_neg_id (a : DFUMT8) : double_neg a = a := by
+  cases a &lt;;&gt; decide</code></pre>
+
+  <p>If the code genuinely requires FFI or low-level access — e.g., a
+  hardware oracle for the Rei-AIOS numeric anchor — it belongs in a
+  separate module that is opted out of the algebraic-core target, with
+  a written justification and an isolated theorem surface (analogous to
+  the <code>AxiomWhitelist.lean</code> pattern for
+  <a href="axiom-bypass.html">axiom bypass</a>).</p>
+</div>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    not directly detectable through <code>verify()</code> alone. A file
+    containing <code>unsafe</code> declarations compiles and
+    <code>verify()</code> returns <code>VALID</code> on any downstream
+    theorem. Enforcement in v0 is a pre-check that runs <em>before</em>
+    the file reaches <code>verify()</code>: parse each declaration and
+    reject the file if any carries the <code>unsafe</code> modifier or
+    calls <code>unsafeCast</code> in its body. Rejected files never
+    enter <code>stats()</code>, keeping <code>decision_rate</code> an
+    honest measure of what was checked under the safe-only discipline.
+  </p>
+  <p>
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>boundary_report(kind = "unsafe")</code> enumerates every
+    declaration in the project whose
+    <code>Lean.ConstantInfo.isUnsafe</code> flag is set, plus every
+    body that references <code>unsafeCast</code> in its expression
+    tree. The result includes both the offending declaration and the
+    theorems that transitively depend on it, so a downstream user can
+    see which of their own claims are undermined by an upstream
+    <code>unsafe</code> definition. Layer 2 is a thin wrapper over v0
+    and does not introduce independent decision logic.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="native-decide-bluff.html">native_decide bluff</a> — the runtime-trust sibling of <code>unsafe</code>; frequently combined with <code>unsafeCast</code> to launder a falsehood into a "proved" theorem.</li>
+  <li><a href="axiom-bypass.html">axiom bypass</a> — the analogous whitelist-based check at the axiom boundary.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

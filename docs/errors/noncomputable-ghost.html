@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>noncomputable ghost — LeanDFumt Errors</title>
+  <meta name="description" content="Detecting a Lean 4 noncomputable definition referenced by a claim that promises computability (decide, native_decide, #eval). Preserves the fully-computable discipline of LeanDFumt.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>noncomputable ghost</span>
+</nav>
+
+<h1>
+  noncomputable ghost
+  <span class="sub"><code>noncomputable</code> の定義が計算可能性の主張と共起している</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p><strong>Lean itself emits no error at declaration time.</strong>
+  A mismatch surfaces only when the noncomputable definition is
+  eventually evaluated:</p>
+  <pre><code>failed to compile definition, consider marking it as 'noncomputable'
+  because it depends on 'Classical.choice'</code></pre>
+  <p>— or, more silently, at a <code>#eval</code> or
+  <code>native_decide</code> that references it and fails to reduce.</p>
+</div>
+
+<p>
+  <code>noncomputable def</code> declares a value that <em>exists</em>
+  in the logic but <em>cannot be extracted</em> to executable code.
+  Legitimate uses depend on <code>Classical.choice</code>, quotients
+  without decidable equality, or other non-constructive machinery. A
+  library that advertises every operation as evaluable — LeanDFumt
+  README, "everything is decidable by <code>by decide</code>" — cannot
+  carry noncomputable definitions in its default target without
+  breaking that promise.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: BadNoncomputable.lean
+import LeanDFumt
+
+namespace LeanDFumt
+
+/-- Looks like a normal helper; actually noncomputable because it
+    consumes a Classical existential. -/
+noncomputable def any_TRUE_witness
+    (h : ∃ a : DFUMT8, DFUMT8.toBool a = true) : DFUMT8 :=
+  Classical.choose h
+
+theorem any_TRUE_witness_toBool
+    (h : ∃ a : DFUMT8, DFUMT8.toBool a = true) :
+    DFUMT8.toBool (any_TRUE_witness h) = true := by
+  unfold any_TRUE_witness
+  exact Classical.choose_spec h
+
+end LeanDFumt</code></pre>
+
+<p>Build output: <em>clean</em>. The theorem type-checks. But the
+  moment downstream code tries to run it:</p>
+
+<div class="block block-error">
+  <pre><code>-- In a downstream file:
+#eval LeanDFumt.any_TRUE_witness ⟨.TRUE, by decide⟩
+-- error: failed to reduce, definition is 'noncomputable'
+
+example : LeanDFumt.any_TRUE_witness ⟨.TRUE, by decide⟩ = .TRUE := by
+  native_decide
+-- error: failed to reduce to WHNF, 'noncomputable' definition encountered</code></pre>
+</div>
+
+<p>
+  The theorem is not <em>false</em> — it type-checks, and its proof is
+  valid — but every claim about the definition's <em>value</em> is
+  effectively frozen. Attempts to extract a concrete answer fail, and
+  the mismatch is only visible at the use site, not at the definition.
+</p>
+
+<h2>Why it matters</h2>
+
+<p>
+  LeanDFumt's core promise is that the eight-value logic is a finite,
+  totally-decidable structure. Every current definition in
+  <code>Basic.lean</code> is fully computable, and every theorem in
+  <code>Theorems.lean</code> closes by <code>decide</code>,
+  <code>rfl</code>, or (once) <code>native_decide</code> on Float.
+  Introducing a <code>noncomputable def</code> anywhere in the core
+  target means the library still <em>claims</em> to be evaluable while
+  containing a definition that cannot be reached at runtime.
+</p>
+
+<p>
+  This failure mode is particularly agent-hazardous: an agent asked to
+  "prove this exists" may reach for <code>Classical.choose</code>
+  because it is the syntactically shortest tactic, without realising
+  that the choice imports <code>noncomputable</code> along with it. The
+  resulting theorem passes review — it type-checks — and only fails
+  later, at a call site.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Provide a concrete constructive witness. On the finite
+  <code>DFUMT8</code> type this is almost always possible by
+  case-analysis on <code>DecidableEq</code>:</p>
+  <pre><code>-- Constructive alternative — no `noncomputable`:
+def find_TRUE_witness : DFUMT8 → Option DFUMT8
+  | .TRUE => some .TRUE
+  | .BOTH => some .BOTH
+  | _     => none
+
+theorem find_TRUE_witness_TRUE :
+    find_TRUE_witness .TRUE = some .TRUE := rfl</code></pre>
+
+  <p>If a definition genuinely requires classical machinery — e.g., it
+  quantifies over an infinite type or invokes AC — it does not belong
+  in the fully-computable core. Move it to a separate module opted out
+  of the default target, mirroring the pattern used for the hypothetical
+  <a href="mathlib-dependency-introduced.html">Mathlib bridge</a>.</p>
+</div>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    partially detectable through <code>verify()</code>. The definition
+    itself compiles, so <code>verify()</code> returns <code>VALID</code>
+    on the theorem. However, <em>any</em> follow-up expression the
+    agent submits that references the noncomputable value under
+    <code>decide</code>, <code>native_decide</code>, or <code>#eval</code>
+    resolves to <code>UNDECIDED / UNSUPPORTED_SYNTAX</code> with a
+    <code>failed to reduce</code> diagnostic in <code>detail</code>. A
+    concentration of that <code>detail</code> shape in
+    <code>stats().reason_breakdown.UNSUPPORTED_SYNTAX</code> is the v0
+    signal that a noncomputable definition has entered the workload —
+    treat it as a policy violation and reject the underlying module in
+    the same pre-check pass as <a href="unsafe-escape.html">unsafe escape</a>.
+  </p>
+  <p>
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>boundary_report(kind = "noncomputable")</code> enumerates
+    every declaration in the project whose
+    <code>Lean.ConstantInfo</code> is flagged noncomputable, and
+    cross-references the call graph to identify which theorems
+    transitively depend on it. Theorems that only <em>type-check</em>
+    a noncomputable definition but never claim to compute its value
+    (a rare pattern) are reported separately. Layer 2 is a thin wrapper
+    over v0 and does not introduce independent decision logic.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="classical-choice-smuggled.html">Classical.choice smuggled</a> — the axiom that most commonly forces a definition to be noncomputable in the first place.</li>
+  <li><a href="unsafe-escape.html">unsafe escape</a> — noncomputable is the "silent, safe" version; unsafe is the "silent, unsafe" version. Same enforcement pattern.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>
