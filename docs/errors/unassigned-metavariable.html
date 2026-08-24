@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>unassigned metavariable — LeanDFumt Errors</title>
+  <meta name="description" content="Lean 4 error 'don't know how to synthesize implicit argument' / 'unassigned metavariable'. Explicit annotation resolves.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>unassigned metavariable</span>
+</nav>
+
+<h1>
+  unassigned metavariable
+  <span class="sub">暗黙引数を推論できない（メタ変数が確定していない）</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <pre><code>don't know how to synthesize implicit argument
+  @DFUMT8.toBool ?a
+context:
+⊢ DFUMT8</code></pre>
+  <p>Sometimes surfaces instead as:</p>
+  <pre><code>unassigned metavariable
+  ?m.42 : DFUMT8</code></pre>
+</div>
+
+<p>
+  Both messages come from the same underlying condition: after elaboration
+  the term still contains a metavariable Lean could not resolve. The
+  compiler cannot invent the missing value on its own.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: Meta.lean
+import LeanDFumt
+open LeanDFumt
+
+example : DFUMT8.toBool _ = true := by decide</code></pre>
+
+<div class="block block-error">
+  <pre><code>Meta.lean:4:26: error: don't know how to synthesize implicit argument
+  @DFUMT8.toBool ?a
+context:
+⊢ DFUMT8</code></pre>
+</div>
+
+<p>
+  The underscore <code>_</code> asks Lean to fill in a value of type
+  <code>DFUMT8</code>. Nothing in the surrounding expression constrains
+  which of the eight values it should be, so elaboration gives up.
+</p>
+
+<h2>Why it happens</h2>
+
+<p>
+  Lean's elaborator solves metavariables by unification. It walks the
+  expression, records constraints, and tries to satisfy all of them. When
+  a metavariable has <em>no</em> constraint that fixes its value — no
+  equality, no type-class instance, no unique inhabitant — the elaborator
+  has no basis for a choice and reports failure rather than guess.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Supply the value explicitly. In the LeanDFumt case, pick which of
+  the eight truth values you actually meant:</p>
+  <pre><code>example : DFUMT8.toBool .TRUE  = true  := by decide
+example : DFUMT8.toBool .BOTH  = true  := by decide  -- BOTH collapses to true
+example : DFUMT8.toBool .FALSE = false := by decide</code></pre>
+
+  <p>For quantified statements, bind the value first with <code>intro</code>:</p>
+  <pre><code>example : ∀ a : DFUMT8, DFUMT8.toBool a = DFUMT8.toBool a := by
+  intro a
+  rfl</code></pre>
+
+  <p>For implicit type arguments elsewhere, use the <code>(t := …)</code>
+  named-argument syntax:</p>
+  <pre><code>-- Instead of List.length _
+example : List.length (α := DFUMT8) [] = 0 := rfl</code></pre>
+</div>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>Rule:</strong> <code>locate_first_error(kind = "metavariable")</code>
+  </p>
+  <p>
+    Return the position and expected type of the first unresolved
+    metavariable reported by the elaborator. When paired with
+    <code>Lean.MessageData</code> parsing, this can be surfaced as a
+    concrete list of candidate values (e.g. all eight <code>DFUMT8</code>
+    constructors) to speed up interactive fixes.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="type-mismatch-nat-float.html">type mismatch (Nat vs Float)</a> — same elaboration path, different failure mode.</li>
+  <li><a href="sorry-in-proof.html">sorry in proof</a> — a metavariable left in tactic mode often turns into an accidental <code>sorry</code>.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

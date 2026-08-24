@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>unknown constant (after rename) — LeanDFumt Errors</title>
+  <meta name="description" content="Lean 4 error 'unknown constant': a lemma was renamed between toolchain versions. Toolchain pinning and rename maps resolve.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>unknown constant (after rename)</span>
+</nav>
+
+<h1>
+  unknown constant (after rename)
+  <span class="sub">補題名がバージョン間で変更されている</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <pre><code>unknown constant 'Nat.succ_eq_add_one'</code></pre>
+</div>
+
+<p>
+  A named lemma or definition existed in an earlier Lean 4 or Mathlib
+  release under one name and now lives under a different one — or was
+  split, merged, or removed. Lean does not automatically forward old
+  names to new ones.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: OldName.lean
+example (n : Nat) : n.succ = n + 1 :=
+  Nat.succ_eq_add_one n     -- unknown constant in some toolchains</code></pre>
+
+<div class="block block-error">
+  <pre><code>OldName.lean:2:2: error: unknown constant 'Nat.succ_eq_add_one'</code></pre>
+</div>
+
+<p>
+  The specific name shown here is illustrative — the same class of error
+  surfaces whenever a stdlib or Mathlib identifier moves. Common causes:
+</p>
+
+<ul>
+  <li>Lemma renamed for consistency with new naming conventions.</li>
+  <li>Lemma inlined into a more general form and the specific name dropped.</li>
+  <li>Namespace reorganisation (e.g. <code>List.foo</code> → <code>List.Basic.foo</code>).</li>
+  <li>Deprecation grace period ended and the alias was removed.</li>
+</ul>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p><strong>Step 1 — pin the toolchain.</strong> LeanDFumt pins
+  <code>lean-toolchain</code>:</p>
+  <pre><code>leanprover/lean4:v4.27.0</code></pre>
+  <p>Any downstream project embedding LeanDFumt should either match this
+  version or explicitly test against a newer one before upgrading. The
+  toolchain file is the single source of truth.</p>
+
+  <p><strong>Step 2 — locate the current name.</strong> From a Lean file
+  in the target toolchain, use <code>#find</code> or the language server's
+  "go to definition":</p>
+  <pre><code>example (n : Nat) : n.succ = n + 1 := by
+  exact?      -- suggests the current lemma name
+  -- or:
+  #find (?n : Nat).succ = ?n + 1</code></pre>
+
+  <p><strong>Step 3 — replace, or derive.</strong> Prefer replacing with
+  the current name. If the lemma no longer exists as a named result but
+  is provable by a short tactic, derive it inline — this insulates future
+  toolchain bumps from another rename:</p>
+  <pre><code>example (n : Nat) : n.succ = n + 1 := rfl</code></pre>
+</div>
+
+<p>
+  For LeanDFumt itself the risk is minimal — the library depends only on
+  Lean core, and all 29 theorems are <code>decide</code>-proved rather
+  than name-referenced. Downstream projects that call into LeanDFumt
+  should nonetheless watch <code>lean-toolchain</code> when consuming a
+  new tag.
+</p>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>Rule:</strong> <code>locate_first_error(kind = "unknown_constant")</code>
+  </p>
+  <p>
+    Return the position and the offending constant name from the first
+    <code>unknown constant</code> diagnostic. When cross-referenced against
+    a <code>rename_map.json</code> (maintained per toolchain bump), this
+    supports semi-automatic rewriting of old names to their current
+    equivalents.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="mathlib-dependency-introduced.html">Mathlib dependency introduced</a> — Mathlib renames are the most common origin of this error class.</li>
+  <li><a href="type-mismatch-nat-float.html">type mismatch (Nat vs Float)</a> — a rename that changes signature can surface as either error.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

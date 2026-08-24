@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>axiom bypass — LeanDFumt Errors</title>
+  <meta name="description" content="Detecting a Lean 4 axiom introduced to sidestep a proof. Preserves axiom-minimality discipline.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>axiom bypass</span>
+</nav>
+
+<h1>
+  axiom bypass
+  <span class="sub">証明を回避するために <code>axiom</code> が追加された</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p><strong>Lean itself emits no error.</strong> This is a policy-level
+  detection: any new <code>axiom</code> declaration outside the whitelisted
+  set is flagged by <code>boundary_report</code>.</p>
+</div>
+
+<p>
+  Lean 4 accepts <code>axiom</code> declarations silently. That is
+  intentional — an axiom is a legitimate mechanism for asserting a
+  primitive. But it is also the easiest way to bypass a hard proof, and
+  the compiler will not warn about it. Auditing has to happen elsewhere.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: BadAxiom.lean
+-- A user cannot prove `DFUMT8.and .BOTH .FALSE = .FALSE` cleanly,
+-- so they assert it as an axiom.
+axiom and_both_false_bypass : DFUMT8.and .BOTH .FALSE = .FALSE
+
+-- Now depend on it as if it were proven:
+theorem downstream : DFUMT8.and .BOTH .FALSE = .FALSE :=
+  and_both_false_bypass</code></pre>
+
+<p>Build output: <em>clean</em>. No warning, no error. The bypass is invisible without an external checker.</p>
+
+<h2>Why it matters</h2>
+
+<p>
+  Every axiom is a <em>trust root</em>. The LeanDFumt library's soundness
+  claim reduces to: "given the axioms of Lean 4 core, these 29 theorems
+  are true." Introducing a new axiom silently widens that trust root
+  without acknowledgement. A downstream user has no way to know their
+  proof depends on <code>and_both_false_bypass</code> rather than on
+  <code>decide</code>-verified computation.
+</p>
+
+<p>
+  In practice, the FALSE-absorption case above <em>is</em> provable by
+  <code>decide</code>. The bypass exists only because the author did not
+  try the right tactic.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Delete the axiom and prove the statement. For LeanDFumt claims on
+  the finite <code>DFUMT8</code> type, <code>decide</code> is almost
+  always sufficient:</p>
+  <pre><code>-- Deleted: axiom and_both_false_bypass : ...
+
+theorem and_both_false : DFUMT8.and .BOTH .FALSE = .FALSE := by decide</code></pre>
+</div>
+
+<p>
+  If a statement genuinely cannot be proved from Lean core — e.g. it
+  encodes a physical postulate or an external oracle — the axiom must be
+  declared in a designated whitelist file with a written justification.
+  In LeanDFumt this whitelist is currently empty; the library is
+  <strong>Lean-core-axiom-only</strong>.
+</p>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>Rule:</strong> <code>boundary_report(kind = "axiom")</code>
+  </p>
+  <p>
+    Enumerate every <code>axiom</code> declaration in the project (via
+    <code>Lean.Environment.axioms</code>) and filter out those in Lean
+    core. Any remaining declaration is a policy violation and must appear
+    in the project's <code>AxiomWhitelist.lean</code> to be accepted.
+  </p>
+  <p>
+    Cross-check with <code>#print axioms &lt;theorem&gt;</code> at build
+    time to verify each theorem's actual axiom dependencies match the
+    whitelist.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="sorry-in-proof.html">sorry in proof</a> — the other main proof-bypass pattern.</li>
+  <li><a href="mathlib-dependency-introduced.html">Mathlib dependency introduced</a> — the analogous import-boundary check.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

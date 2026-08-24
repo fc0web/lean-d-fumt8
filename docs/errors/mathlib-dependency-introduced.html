@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mathlib dependency introduced — LeanDFumt Errors</title>
+  <meta name="description" content="Lean 4 error 'unknown module Mathlib' or 'unknown identifier'. LeanDFumt is a no-Mathlib library — how to rewrite in Lean core.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>Mathlib dependency introduced</span>
+</nav>
+
+<h1>
+  Mathlib dependency introduced
+  <span class="sub">Mathlib 依存が混入した（no-Mathlib 方針違反）</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p>Two shapes, depending on whether the import is present:</p>
+  <pre><code>-- (A) with the import line:
+unknown module 'Mathlib.Data.Real.Basic'
+
+-- (B) without the import line:
+unknown identifier 'Real'</code></pre>
+</div>
+
+<p>
+  LeanDFumt's <code>lakefile.toml</code> deliberately does not depend on
+  Mathlib. Any code path that reaches for a Mathlib type — <code>Real</code>,
+  <code>Complex</code>, most of <code>Finset</code>, <code>MeasureTheory</code>,
+  etc. — will fail to build.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: BadImport.lean
+import Mathlib.Data.Real.Basic
+
+def anchor : Real := 3.14</code></pre>
+
+<div class="block block-error">
+  <pre><code>BadImport.lean:1:0: error: unknown module 'Mathlib.Data.Real.Basic'</code></pre>
+</div>
+
+<h2>Why the discipline exists</h2>
+
+<p>
+  From LeanDFumt's README:
+</p>
+
+<blockquote>
+  Mathlib is wonderful but heavy: the standard build pulls hundreds of
+  dependencies and takes 30+ minutes on first cache miss. For an 8-element
+  finite logic, <em>everything is decidable by <code>by decide</code></em>,
+  so no Mathlib machinery is needed. This keeps the library light, fast to
+  build, and easy to embed in any Lean 4 project.
+</blockquote>
+
+<p>
+  Downstream users adopt LeanDFumt precisely because it does not force a
+  Mathlib toolchain. Introducing a Mathlib symbol into the default target
+  breaks that promise.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p><strong>Prefer:</strong> rewrite the affected declaration using Lean
+  4 core types only.</p>
+  <pre><code>-- Instead of Real:
+--   use Float for numeric anchors (Init.Data.Float, in core)
+--   use Rat  for exact rationals (Std, no Mathlib)
+--   use Int  when the domain is discrete
+def anchor : Float := 3.14</code></pre>
+
+  <p>If the code genuinely needs Mathlib (e.g. it embeds LeanDFumt into a
+  larger Mathlib-based proof), isolate it in a <em>separate module</em>
+  outside the default target:</p>
+
+  <pre><code># lakefile.toml
+[[require]]
+name = "mathlib"
+git  = "https://github.com/leanprover-community/mathlib4"
+rev  = "..."
+
+[[lean_lib]]
+name = "LeanDFumtMathlibBridge"    # optional side library
+# default_target = false           # not in `lake build` default set</code></pre>
+</div>
+
+<p>
+  This keeps the core library pure while allowing an optional bridge for
+  users who already carry Mathlib in their project.
+</p>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>Rule:</strong> <code>boundary_report(kind = "import")</code>
+  </p>
+  <p>
+    Enumerate every <code>import</code> line under
+    <code>defaultTargets</code>. Flag any whose module path begins with
+    <code>Mathlib</code>. Optional bridge libraries opted out of the
+    default target are ignored by this rule but reported separately.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="axiom-bypass.html">axiom bypass</a> — the analogous check at the axiom boundary.</li>
+  <li><a href="type-mismatch-nat-float.html">type mismatch (Nat vs Float)</a> — reaching for <code>Real</code> is often what triggers this in the first place.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

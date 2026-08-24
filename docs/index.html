@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LeanDFumt — Error Database</title>
+  <meta name="description" content="Lean 4 error patterns with fixes that preserve zero-sorry, no-Mathlib discipline. Companion to the LeanDFumt (D-FUMT₈) library.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>
+  LeanDFumt — Error Database
+  <span class="sub">Lean 4 エラー解決データベース — zero-sorry 規律を保つ修正法</span>
+</h1>
+
+<p>
+  Common Lean 4 errors, each with a minimal reproduction and a fix that
+  <strong>preserves the zero-sorry, no-Mathlib discipline</strong> used by the
+  <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt</a> library.
+  Examples use <code>DFUMT8</code> where natural, but each entry stands on
+  its own as a general Lean 4 reference.
+</p>
+
+<h2>Why this exists</h2>
+
+<p>
+  LeanDFumt ships <strong>29 zero-sorry theorems</strong> for eight-valued
+  logic with no Mathlib dependency. When users extend the library or embed
+  it in their own proofs, the same handful of Lean 4 errors surface
+  repeatedly. This database records those errors and the fixes that keep
+  the discipline intact — no <code>sorry</code>, no new <code>axiom</code>,
+  no Mathlib import.
+</p>
+
+<h2>Errors</h2>
+
+<ul class="error-list">
+  <li>
+    <h3><a href="errors/sorry-in-proof.html">sorry in proof</a></h3>
+    <p class="msg">declaration uses 'sorry'</p>
+    <p>A <code>sorry</code> placeholder remains in a completed proof. Discipline: zero-sorry.</p>
+  </li>
+  <li>
+    <h3><a href="errors/axiom-bypass.html">axiom bypass</a></h3>
+    <p class="msg">(policy detection — no compiler error)</p>
+    <p>A new <code>axiom</code> declaration was introduced to sidestep a proof. Discipline: axiom-minimality.</p>
+  </li>
+  <li>
+    <h3><a href="errors/type-mismatch-nat-float.html">type mismatch (Nat vs Float)</a></h3>
+    <p class="msg">type mismatch ... has type Nat but is expected to have type Float</p>
+    <p>Numeric expression is <code>Nat</code> where <code>Float</code> is required. Common when adding numeric anchors.</p>
+  </li>
+  <li>
+    <h3><a href="errors/mathlib-dependency-introduced.html">Mathlib dependency introduced</a></h3>
+    <p class="msg">unknown module Mathlib.… / unknown identifier</p>
+    <p>Code was written assuming Mathlib is imported. Discipline: no-Mathlib.</p>
+  </li>
+  <li>
+    <h3><a href="errors/unassigned-metavariable.html">unassigned metavariable</a></h3>
+    <p class="msg">don't know how to synthesize implicit argument</p>
+    <p>Elaborator cannot infer a type or instance. Explicit annotation resolves.</p>
+  </li>
+  <li>
+    <h3><a href="errors/unknown-constant-after-rename.html">unknown constant (after rename)</a></h3>
+    <p class="msg">unknown constant 'Nat.succ_eq_add_one'</p>
+    <p>Lemma or definition was renamed between Lean 4 versions. Discipline: track toolchain pinning.</p>
+  </li>
+</ul>
+
+<h2>Detection: CHECKER_SPEC</h2>
+
+<p>
+  Each entry maps to a rule in Rei-AIOS's <code>CHECKER_SPEC</code>, which
+  exposes two locators:
+</p>
+
+<ul>
+  <li><code>locate_first_error(kind)</code> — position of the earliest fault of the given kind under a stable source-order traversal.</li>
+  <li><code>boundary_report(kind)</code> — enumeration of policy violations at the axiom / import boundary.</li>
+</ul>
+
+<p>
+  The <em>Detection</em> section on each page names the applicable rule
+  and its expected output shape.
+</p>
+
+<footer>
+  <p>
+    <strong>LeanDFumt Error Database</strong> — part of the
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt</a>
+    library by 藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026.
+    Licensed Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

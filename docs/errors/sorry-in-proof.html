@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>sorry in proof — LeanDFumt Errors</title>
+  <meta name="description" content="Lean 4 warning 'declaration uses sorry': what it means, minimal reproduction, and fixes that preserve zero-sorry discipline.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>sorry in proof</span>
+</nav>
+
+<h1>
+  sorry in proof
+  <span class="sub">証明中に <code>sorry</code> が残っている</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <pre><code>declaration uses 'sorry'</code></pre>
+</div>
+
+<p>
+  Lean 4 emits this as a <strong>warning</strong>, not a hard error, so it
+  is trivial to overlook in a large build. Under the zero-sorry discipline
+  of LeanDFumt and Rei-AIOS, any occurrence is treated as a blocking fault.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: Example.lean
+theorem foo : 1 + 1 = 2 := by
+  sorry</code></pre>
+
+<p>Build output:</p>
+<div class="block block-error">
+  <pre><code>Example.lean:2:2: warning: declaration uses 'sorry'</code></pre>
+</div>
+
+<h2>Why it happens</h2>
+
+<p>
+  <code>sorry</code> is Lean's placeholder for an unproven goal. It closes
+  any goal at any type, so the file compiles, but the declared theorem is
+  <em>not actually proved</em>. Downstream code that depends on the
+  theorem will build, and tests that rely on the theorem being true may
+  pass by coincidence — until a real counterexample surfaces.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Complete the proof with real tactics. For decidable propositions on
+  finite types — the common case in LeanDFumt — <code>by decide</code> or
+  <code>by native_decide</code> suffices:</p>
+  <pre><code>theorem foo : 1 + 1 = 2 := by decide
+
+-- DFUMT8 examples (require: import LeanDFumt; open LeanDFumt)
+example : DFUMT8.and .BOTH .TRUE = .BOTH := by decide
+example : DFUMT8.neg .BOTH = .BOTH := by decide</code></pre>
+</div>
+
+<p>
+  If the goal is genuinely open — i.e. you do not yet know how to prove it
+  — <strong>do not leave <code>sorry</code></strong>. Instead:
+</p>
+
+<ol>
+  <li>Mark the file with an <code>-- OPEN:</code> comment describing the missing step.</li>
+  <li>Exclude the file from the default <code>lakefile.toml</code> target.</li>
+  <li>Record the goal in the project's open-problem list.</li>
+</ol>
+
+<p>
+  This preserves the invariant that <em>every default-target build is
+  zero-sorry</em>, while still letting exploratory work live in the repo.
+</p>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>Rule:</strong> <code>locate_first_error(kind = "sorry")</code>
+  </p>
+  <p>
+    Traverse the elaborated declaration tree in source order; return the
+    position of the first <code>Expr.mvar</code> whose head symbol
+    resolves to <code>sorryAx</code>. If any is found, the file fails the
+    zero-sorry gate regardless of whether Lean itself would only warn.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="axiom-bypass.html">axiom bypass</a> — the other main way proofs get bypassed.</li>
+  <li><a href="unassigned-metavariable.html">unassigned metavariable</a> — often precedes an accidental <code>sorry</code>.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

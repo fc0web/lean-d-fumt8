@@ -1,0 +1,144 @@
+/* LeanDFumt Docs — shared stylesheet
+   Author: Nobuki Fujimoto / Rei-AIOS Project, 2026. Apache-2.0. */
+
+:root {
+  --fg: #1a1a1a;
+  --muted: #666;
+  --bg: #fff;
+  --code-bg: #f4f4f4;
+  --accent: #0057b8;
+  --border: #e0e0e0;
+  --err-tint: rgba(220, 50, 50, .06);
+  --err-line: #d33;
+  --ok-tint:  rgba(50, 180, 100, .06);
+  --ok-line:  #2a7;
+  --note-tint: rgba(160, 90, 240, .06);
+  --note-line: #a5f;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e0e0e0;
+    --muted: #999;
+    --bg: #161616;
+    --code-bg: #262626;
+    --accent: #6bb2ff;
+    --border: #333;
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+               "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  max-width: 820px;
+  margin: 2em auto;
+  padding: 0 1.2em;
+  line-height: 1.7;
+}
+
+h1 {
+  font-size: 1.55em;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: .3em;
+  margin-bottom: .2em;
+}
+h1 .sub {
+  display: block;
+  font-size: .6em;
+  color: var(--muted);
+  font-weight: normal;
+  margin-top: .3em;
+}
+h2 {
+  font-size: 1.15em;
+  margin-top: 2em;
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: .2em;
+}
+h3 {
+  font-size: .95em;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-top: 1.5em;
+  margin-bottom: .3em;
+}
+
+code, pre {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  background: var(--code-bg);
+  border-radius: 3px;
+}
+code { padding: .1em .35em; font-size: .93em; }
+pre {
+  padding: 1em;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  font-size: .9em;
+  line-height: 1.5;
+}
+pre code { background: none; padding: 0; font-size: 1em; }
+
+.block {
+  padding: .8em 1.1em;
+  margin: 1em 0;
+  border-left: 3px solid;
+  border-radius: 0 3px 3px 0;
+}
+.block-error { border-color: var(--err-line);  background: var(--err-tint); }
+.block-fix   { border-color: var(--ok-line);   background: var(--ok-tint); }
+.block-note  { border-color: var(--note-line); background: var(--note-tint); }
+.block > :first-child { margin-top: 0; }
+.block > :last-child  { margin-bottom: 0; }
+
+a { color: var(--accent); }
+a:hover { text-decoration: underline; }
+
+nav.crumbs {
+  color: var(--muted);
+  font-size: .9em;
+  margin-bottom: .5em;
+}
+nav.crumbs a { color: inherit; }
+
+ul.error-list { list-style: none; padding: 0; }
+ul.error-list li {
+  margin: 1em 0;
+  padding: 1em 1.2em;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  transition: border-color .15s;
+}
+ul.error-list li:hover { border-color: var(--accent); }
+ul.error-list h3 {
+  margin: 0 0 .3em 0;
+  color: var(--fg);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 1em;
+  font-weight: 600;
+}
+ul.error-list h3 a { text-decoration: none; }
+ul.error-list h3 a:hover { text-decoration: underline; }
+ul.error-list .msg {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: .85em;
+  color: var(--muted);
+  margin: .3em 0;
+}
+ul.error-list p { margin: .3em 0; font-size: .92em; }
+
+footer {
+  margin-top: 3em;
+  padding-top: 1em;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: .88em;
+  line-height: 1.6;
+}
+footer a { color: inherit; text-decoration: underline; }

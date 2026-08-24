@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>type mismatch (Nat vs Float) — LeanDFumt Errors</title>
+  <meta name="description" content="Lean 4 error 'type mismatch: has type Nat but is expected to have type Float'. Explicit coercion resolves. No Mathlib required.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>type mismatch (Nat vs Float)</span>
+</nav>
+
+<h1>
+  type mismatch (Nat vs Float)
+  <span class="sub">数値式が <code>Nat</code> だが <code>Float</code> が要求されている</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <pre><code>type mismatch
+  n
+has type
+  Nat : Type
+but is expected to have type
+  Float : Type</code></pre>
+</div>
+
+<p>
+  This surfaces whenever a term of type <code>Nat</code> is used where
+  <code>Float</code> is required. Numeric <em>literals</em> are polymorphic
+  in Lean 4 via <code>OfNat</code>, so <code>(3 : Float)</code> works. The
+  mismatch happens for <em>terms</em> — variables, arithmetic expressions,
+  function results — where the elaborator has committed to <code>Nat</code>.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: Example.lean
+def anchor (n : Nat) : Float := n</code></pre>
+
+<div class="block block-error">
+  <pre><code>Example.lean:1:32: error: type mismatch
+  n
+has type
+  Nat : Type
+but is expected to have type
+  Float : Type</code></pre>
+</div>
+
+<p>
+  Both types are in Lean 4 core — <code>Float</code> lives in
+  <code>Init.Data.Float</code> — so this error appears without any
+  Mathlib import.
+</p>
+
+<h2>Why it happens</h2>
+
+<p>
+  There is no automatic coercion from <code>Nat</code> to <code>Float</code>
+  in Lean 4 core. This is deliberate: floating-point conversion is lossy
+  and non-associative, so the language forces the author to spell out
+  where the boundary is.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Insert an explicit conversion:</p>
+  <pre><code>-- Option A: dot notation
+def anchor (n : Nat) : Float := n.toFloat
+
+-- Option B: qualified call
+def anchor' (n : Nat) : Float := Float.ofNat n</code></pre>
+</div>
+
+<p>
+  In LeanDFumt, this pattern shows up when writing numeric anchors for
+  the eight-valued logic — for example the <code>toFloat</code> map on
+  <code>DFUMT8</code> that Papers 75 / 76 use for the QuTiP bridge. The
+  fix is the same: convert at the boundary.
+</p>
+
+<pre><code>-- Analogous DFUMT8 case: DFUMT8 → Float
+example : (DFUMT8.TRUE.toTernary : Int).toNat.toFloat &gt; 0.0 := by native_decide</code></pre>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>Rule:</strong> <code>locate_first_error(kind = "type_mismatch")</code>
+  </p>
+  <p>
+    Return the position and pair <code>(actual_type, expected_type)</code>
+    of the first elaboration failure whose Lean-emitted category is
+    <code>type mismatch</code>. Useful for downstream tooling that suggests
+    the corresponding <code>.toX</code> or <code>X.ofY</code> coercion.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="mathlib-dependency-introduced.html">Mathlib dependency introduced</a> — the wrong fix is to <code>import Mathlib</code> for <code>Real</code>; stay in Lean core.</li>
+  <li><a href="unassigned-metavariable.html">unassigned metavariable</a> — same underlying elaboration path.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>
