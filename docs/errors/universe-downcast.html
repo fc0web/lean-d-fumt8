@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>universe downcast — LeanDFumt Errors</title>
+  <meta name="description" content="Detecting a Lean 4 existential proved in Prop when a downstream use requires a witness at Type u. Proof-irrelevance makes the witness unreachable.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>universe downcast</span>
+</nav>
+
+<h1>
+  universe downcast
+  <span class="sub">Prop で <code>∃</code> を主張し、下流で witness を取り出そうとして失敗</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p>Surfaces at the extraction site, not at the claim site:</p>
+  <pre><code>failed to synthesize
+  Nonempty DFUMT8
+-- or:
+type mismatch: 'h.choose' has type
+  ?α  but is expected to have type
+  DFUMT8
+
+-- or:
+'ExistsTrueWitness.choose' depends on Classical.choice</code></pre>
+</div>
+
+<p>
+  In Lean 4, <code>∃ x, P x</code> is <em>proof-irrelevant</em>: it
+  lives in <code>Prop</code>, and there is no computable way to
+  extract a witness at the term level. The dependent-pair alternative
+  <code>Σ x, P x</code> lives in <code>Type u</code>, and
+  <code>.1</code> gives the witness directly. Choosing the wrong
+  universe is a common agent bluff: "prove existence" is discharged
+  quickly with <code>∃</code>, and the caller only discovers the
+  extraction fails when they try to <em>use</em> the value.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: BadUniverse.lean
+import LeanDFumt
+
+namespace LeanDFumt
+
+/-- Existence in Prop — proof-irrelevant, no computable witness. -/
+theorem exists_TRUE_witness :
+    ∃ a : DFUMT8, DFUMT8.toBool a = true :=
+  ⟨.TRUE, by decide⟩
+
+end LeanDFumt
+
+-- File: Downstream.lean
+import LeanDFumt.BadUniverse
+open LeanDFumt
+
+/-- Try to use the "proved" witness at the term level. -/
+def use_witness : DFUMT8 := exists_TRUE_witness.choose</code></pre>
+
+<div class="block block-error">
+  <pre><code>Downstream.lean:4:41: error:
+'Classical.choose' is noncomputable, and its use requires importing
+`Classical`. The theorem was proved in Prop, so no constructive
+extraction is available.</code></pre>
+</div>
+
+<p>
+  The bluff is that <code>exists_TRUE_witness</code> looks like a
+  complete deliverable. It type-checks, closes with <code>decide</code>,
+  and passes <code>verify()</code> as <code>VALID</code>. Only at the
+  <em>call site</em> does the mismatch surface — often far away, in a
+  file the original author never touched. Worse: importing
+  <code>Classical</code> to satisfy <code>.choose</code> silently
+  drags <code>Classical.choice</code> into the trust root
+  (see <a href="classical-choice-smuggled.html">Classical.choice
+  smuggled</a>), converting a soluble universe-choice bug into a
+  soundness-discipline violation.
+</p>
+
+<h2>Why it matters</h2>
+
+<p>
+  LeanDFumt's core proofs are all universe-monomorphic — every
+  statement in <code>Theorems.lean</code> is an equality on
+  <code>DFUMT8</code>, which lives at <code>Type</code>. Existence
+  claims are rare in the current library, but any future addition of
+  the shape "there is a value with property P" needs to make a
+  deliberate choice: is P a proposition (use <code>∃</code>) or a
+  computational query (use <code>Σ</code>)? The default of
+  <code>∃</code> is the wrong default for a library whose downstream
+  users expect to <em>evaluate</em> witnesses at compile time.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Use <code>Σ</code> when a downstream caller needs the witness at
+  the term level:</p>
+  <pre><code>-- Constructive alternative: Sigma type at Type, not Prop.
+def find_TRUE_witness :
+    Σ a : DFUMT8, DFUMT8.toBool a = true :=
+  ⟨.TRUE, by decide⟩
+
+-- Extraction works without Classical machinery:
+def use_witness : DFUMT8 := find_TRUE_witness.1</code></pre>
+
+  <p>Use <code>∃</code> when the claim is genuinely propositional —
+  "there exists a value" as a soundness statement, with no
+  extraction downstream. Making this choice deliberately, in the
+  original theorem's signature, prevents the downstream surprise.</p>
+
+  <p>If a legacy <code>∃</code> claim must be adapted after the fact,
+  the safe path is to introduce a fresh <code>Σ</code>-typed version
+  under a new name (e.g., <code>find_TRUE_witness</code> alongside
+  <code>exists_TRUE_witness</code>) rather than deleting the original
+  — the same convention that keeps
+  <a href="hypothesis-stripped.html">hypothesis-stripped</a> edits
+  auditable.</p>
+</div>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    partially detectable through <code>verify()</code>. The offending
+    <code>∃</code> claim itself compiles and <code>verify()</code>
+    returns <code>VALID</code>. A downstream expression that
+    references <code>.choose</code> on that claim without a
+    <code>Classical</code> import resolves to
+    <code>UNDECIDED / MISSING_AXIOM</code> with the "requires importing
+    Classical" diagnostic in <code>detail</code>. A concentration of
+    that specific <code>detail</code> shape in
+    <code>stats().reason_breakdown.MISSING_AXIOM</code> is the v0
+    signal that a universe-downcast is active in the workload —
+    treated as evidence to inspect the upstream ∃ claim, not as a
+    per-expression fault.
+  </p>
+  <p>
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>boundary_report(kind = "universe_downcast")</code> enumerates
+    every <code>∃</code>-typed theorem in the project and cross-references
+    the call graph for downstream uses of <code>.choose</code>,
+    <code>Classical.choose</code>, or an <em>expected Type u</em>
+    context (e.g., a coercion into a <code>Σ</code>-typed field). Pairs
+    where the theorem is Prop but the use is Type u are reported.
+    Layer 2 is a thin wrapper over v0 and does not introduce
+    independent decision logic.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="classical-choice-smuggled.html">Classical.choice smuggled</a> — the trap that catches unwary attempts to fix a universe downcast with <code>Classical.choose</code>.</li>
+  <li><a href="noncomputable-ghost.html">noncomputable ghost</a> — the term-level failure mode when <code>Classical.choose</code> succeeds at extraction but yields a noncomputable value.</li>
+  <li><a href="hypothesis-stripped.html">hypothesis stripped</a> — the same "correct the signature under a new name" convention applies to universe adjustments.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

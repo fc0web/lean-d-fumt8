@@ -80,6 +80,26 @@
     <p>A public theorem's signature has become strictly weaker between versions (a hypothesis dropped) while the name stayed the same. Only a baseline diff catches it.</p>
   </li>
   <li>
+    <h3><a href="errors/partial-def-ghost.html">partial def ghost</a></h3>
+    <p class="msg">(silent — partial def is opaque; theorems about it are vacuous)</p>
+    <p>A <code>partial def</code> in the algebraic core cannot be unfolded in proofs; theorems that reference it slip through with trivially-true bodies.</p>
+  </li>
+  <li>
+    <h3><a href="errors/implemented-by-override.html">@[implemented_by] override</a></h3>
+    <p class="msg">(silent — decide and native_decide disagree)</p>
+    <p>An <code>@[implemented_by native_impl]</code> attribute substitutes a runtime body for the declared one; <code>native_decide</code> proofs about the symbol then trust an unchecked impl.</p>
+  </li>
+  <li>
+    <h3><a href="errors/initialize-env-pollution.html">initialize env pollution</a></h3>
+    <p class="msg">(silent — load-time environment mutation)</p>
+    <p>A top-level <code>initialize</code> block mutates the elaboration environment (attributes, simp sets, hooks) before downstream files load, invisibly to any per-expression check.</p>
+  </li>
+  <li>
+    <h3><a href="errors/universe-downcast.html">universe downcast</a></h3>
+    <p class="msg">(silent at claim; fails at downstream .choose)</p>
+    <p>An existence claim proved in <code>Prop</code> (<code>∃</code>) yields no computable witness; downstream <code>.choose</code> uses fail or silently pull in <code>Classical.choice</code>.</p>
+  </li>
+  <li>
     <h3><a href="errors/type-mismatch-nat-float.html">type mismatch (Nat vs Float)</a></h3>
     <p class="msg">type mismatch ... has type Nat but is expected to have type Float</p>
     <p>Numeric expression is <code>Nat</code> where <code>Float</code> is required. Common when adding numeric anchors.</p>

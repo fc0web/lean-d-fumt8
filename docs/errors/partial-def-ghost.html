@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>partial def ghost — LeanDFumt Errors</title>
+  <meta name="description" content="Detecting a Lean 4 partial def in an algebraic module that also declares theorems about it. Preserves the total-only discipline of LeanDFumt.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>partial def ghost</span>
+</nav>
+
+<h1>
+  partial def ghost
+  <span class="sub"><code>partial def</code> の関数について定理を主張している</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p><strong>Lean itself emits no error.</strong> This is a policy-level
+  detection: any <code>partial def</code> in a module that also declares
+  a theorem referencing it is flagged as a pre-check.</p>
+</div>
+
+<p>
+  Lean 4's <code>partial def</code> is a legitimate escape hatch for
+  functions whose termination cannot be shown structurally — parsers,
+  interpreters, event loops. Unlike <code>unsafe def</code>
+  (see <a href="unsafe-escape.html">unsafe escape</a>), <code>partial</code>
+  stays inside the type system: it uses an <em>inhabited-type</em> trick
+  to declare the function without a termination proof. The catch is that
+  the definition becomes <strong>opaque</strong> — Lean will not unfold
+  it inside a proof. Theorems about <code>partial def</code>s are
+  therefore vacuous unless proved via the (unavailable) fixed-point
+  equation, and this vacuity is invisible from the theorem's statement.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: BadPartial.lean
+import LeanDFumt
+
+namespace LeanDFumt
+
+/-- Non-terminating "iterate negation". Lean accepts it because
+    DFUMT8 is Inhabited. -/
+partial def spin : DFUMT8 → DFUMT8
+  | a => spin (DFUMT8.neg a)
+
+/-- A theorem statement about `spin` — but `spin` is opaque, so no
+    unfolding tactic can inspect its body. -/
+theorem spin_is_identity (a : DFUMT8) : spin a = a := by
+  sorry     -- the theorem is not actually provable
+
+end LeanDFumt</code></pre>
+
+<p>Build output: <em>fails on the sorry</em> — but the agent's bluff is
+  to launder the failure through some other channel:</p>
+
+<pre><code>-- Bluff variant: no theorem inspection, just a claim in a doc-string.
+partial def spin : DFUMT8 → DFUMT8
+  | a => spin (DFUMT8.neg a)
+
+/-- `spin` is the identity on DFUMT8. Trust me. -/
+theorem spin_id_trust (a : DFUMT8) : True := trivial
+
+-- Downstream imports and treats `spin_id_trust` as endorsement of the
+-- docstring claim. The docstring is not machine-checked; only the
+-- statement `True` is.</code></pre>
+
+<div class="block block-error">
+  <p>Build output: <em>clean</em>. Nothing in Lean checks that a
+  docstring's claim matches the theorem's statement, and nothing
+  prevents a theorem <em>referencing</em> a partial def from having a
+  trivially-true body.</p>
+</div>
+
+<h2>Why it matters</h2>
+
+<p>
+  LeanDFumt's <code>Basic.lean</code> declares every operation on
+  <code>DFUMT8</code> by structural recursion on the eight constructors
+  — every function terminates in a single step, and Lean checks this at
+  elaboration. Introducing a <code>partial def</code> in the algebraic
+  core means the module now contains a definition whose body cannot be
+  inspected in proofs, so downstream reasoning about the value loses
+  its foothold silently.
+</p>
+
+<p>
+  <code>partial</code> also composes with
+  <a href="native-decide-bluff.html">native_decide</a>: a partial def's
+  compiled binary <em>does</em> return values (possibly by looping
+  forever, but often after some steps), and <code>native_decide</code>
+  will trust whatever the binary returns. This makes
+  <code>partial def</code> the low-severity twin of the
+  <code>unsafe</code> / <code>native_decide</code> combination — same
+  trust divergence, quieter surface.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Replace <code>partial def</code> with a structural or
+  well-founded recursion that Lean can verify. On the finite
+  <code>DFUMT8</code> type, structural pattern-matching always
+  suffices:</p>
+  <pre><code>-- Safe alternative: single-step structural function.
+def apply_neg_twice (a : DFUMT8) : DFUMT8 :=
+  DFUMT8.neg (DFUMT8.neg a)
+
+theorem apply_neg_twice_id (a : DFUMT8) : apply_neg_twice a = a := by
+  cases a &lt;;&gt; decide</code></pre>
+
+  <p>If the function is genuinely non-structural (e.g. a parser for
+  D-FUMT₈-encoded input), keep <code>partial</code> but move the
+  definition into a dedicated module that is opted out of the
+  algebraic-core target. That module should not declare theorems about
+  the partial function's return value — those claims cannot be
+  discharged with the same rigour as the rest of the library.</p>
+</div>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    not directly detectable through <code>verify()</code> alone. A file
+    containing <code>partial def</code> declarations compiles and
+    <code>verify()</code> returns <code>VALID</code> on downstream
+    theorems that happen to be provable (typically the trivial ones).
+    Enforcement in v0 is a pre-check that runs <em>before</em> the file
+    reaches <code>verify()</code>: parse each declaration and reject
+    the file if a <code>partial def</code> appears in a module that
+    also declares a theorem whose statement references it by name.
+    Rejected files never enter <code>stats()</code>, keeping
+    <code>decision_rate</code> an honest measure of what was verified
+    under the total-only discipline.
+  </p>
+  <p>
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>boundary_report(kind = "partial")</code> enumerates every
+    declaration in the project whose <code>Lean.ConstantInfo.isPartial</code>
+    flag is set, cross-references the call graph to find theorems that
+    mention them, and reports the pairs. Theorems in dedicated
+    partial-only modules (opted out of the algebraic-core target) are
+    filtered out. Layer 2 is a thin wrapper over v0 and does not
+    introduce independent decision logic.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="unsafe-escape.html">unsafe escape</a> — the higher-severity sibling; <code>unsafe def</code> escapes type-checking entirely, <code>partial def</code> only escapes termination.</li>
+  <li><a href="native-decide-bluff.html">native_decide bluff</a> — combines with <code>partial</code> to produce runtime-trusted claims about non-terminating functions.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

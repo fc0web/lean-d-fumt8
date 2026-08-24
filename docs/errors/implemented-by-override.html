@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>@[implemented_by] override — LeanDFumt Errors</title>
+  <meta name="description" content="Detecting a Lean 4 @[implemented_by] attribute that silently substitutes a native implementation for the declared body, breaking the compile-time / runtime agreement.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>@[implemented_by] override</span>
+</nav>
+
+<h1>
+  @[implemented_by] override
+  <span class="sub"><code>@[implemented_by]</code> でランタイム実装を差し替えている</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p><strong>Lean itself emits no error.</strong> This is a policy-level
+  detection: any <code>@[implemented_by]</code> attribute in the
+  project is flagged as a pre-check.</p>
+</div>
+
+<p>
+  Lean 4's <code>@[implemented_by native_impl]</code> attribute tells
+  the compiler to use <code>native_impl</code> at runtime instead of
+  the declaration's own body. The two must be
+  <em>propositionally equal</em>, but Lean does not check this — it
+  trusts the annotation. When <code>decide</code> and
+  <code>native_decide</code> disagree on a theorem about the overridden
+  symbol, this attribute is almost always the reason. It is the
+  primary amplifier of <a href="native-decide-bluff.html">native_decide
+  bluff</a>: without it, forging a
+  <code>native_decide</code> proof would require a compiler bug; with
+  it, forging is a single-line source edit.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: BadImpl.lean
+import LeanDFumt
+
+namespace LeanDFumt
+
+/-- The declared body: correct implementation. -/
+@[implemented_by lie_toBool]
+def hijacked_toBool (a : DFUMT8) : Bool :=
+  match a with
+  | .TRUE | .BOTH =&gt; true
+  | _             =&gt; false
+
+/-- The runtime body: always `true`, in flagrant contradiction of the
+    declared body. Lean does not check that these two agree. -/
+unsafe def lie_toBool (_ : DFUMT8) : Bool := true
+
+end LeanDFumt</code></pre>
+
+<p>Build output: <em>clean</em>. Now watch <code>decide</code> and
+  <code>native_decide</code> disagree on the same theorem:</p>
+
+<div class="block block-error">
+  <pre><code>-- Uses the declared body (kernel reduction):
+example : LeanDFumt.hijacked_toBool .FALSE = false := by decide
+-- ✓ passes
+
+-- Uses the native override:
+example : LeanDFumt.hijacked_toBool .FALSE = false := by native_decide
+-- ✗ fails: 'true = false'</code></pre>
+</div>
+
+<p>
+  The <code>native_decide</code> failure at least surfaces the
+  disagreement here. The dangerous case is the reverse: a
+  <code>native_decide</code> proof succeeds where <code>decide</code>
+  would have failed — because the native lie happens to satisfy the
+  goal while the honest declared body does not. Both proofs pass
+  <code>verify()</code> as <code>VALID</code>; only cross-checking the
+  two tactics on the same goal reveals the fraud.
+</p>
+
+<h2>Why it matters</h2>
+
+<p>
+  LeanDFumt's soundness rests on the assumption that
+  <code>#eval</code>, <code>decide</code>, and <code>native_decide</code>
+  agree on every <code>DFUMT8</code> operation. This assumption is
+  what lets Papers 75/76 use the same operators at compile time (in
+  Lean proofs) and at runtime (in QuTiP-numerical anchors). An
+  <code>@[implemented_by]</code> attribute anywhere in the transitive
+  call graph invalidates the assumption — silently, at a single site,
+  with no downstream indicator.
+</p>
+
+<p>
+  The attribute has legitimate uses in the standard library
+  (<code>System.Platform.numBits</code>, some IO primitives) — cases
+  where the declared body is a specification and the native impl is a
+  faster equivalent. In an algebraic library it has none. Every
+  operation on <code>DFUMT8</code> is a pattern match on eight
+  constructors; nothing needs a faster native path.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Delete the attribute. If the declared body is correct — as it
+  should be — deleting the attribute makes <code>native_decide</code>
+  agree with <code>decide</code> automatically:</p>
+  <pre><code>-- Deleted: @[implemented_by lie_toBool]
+
+def honest_toBool (a : DFUMT8) : Bool :=
+  match a with
+  | .TRUE | .BOTH =&gt; true
+  | _             =&gt; false
+
+-- Both tactics now use the same body:
+example : honest_toBool .FALSE = false := by decide         -- ✓
+example : honest_toBool .FALSE = false := by native_decide  -- ✓</code></pre>
+
+  <p>If a native fast path is genuinely needed (LeanDFumt currently
+  has none), the two bodies must be equal by inspection <em>and</em>
+  the attribute site must be documented with a written justification.
+  In LeanDFumt the whitelist for <code>@[implemented_by]</code> is
+  currently empty; the library is <strong>native-override-free</strong>.</p>
+</div>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    not directly detectable through <code>verify()</code> alone. A file
+    with an <code>@[implemented_by]</code> attribute compiles and both
+    <code>decide</code> and <code>native_decide</code> proofs return
+    <code>VALID</code> — even when the two would disagree if run
+    side-by-side. Enforcement in v0 is a pre-check that runs
+    <em>before</em> the file reaches <code>verify()</code>: parse each
+    declaration's attributes and reject the file if any carries
+    <code>@[implemented_by ...]</code> outside a project-declared
+    whitelist. Optional harder mode: for every declaration with the
+    attribute, submit <em>both</em> a <code>decide</code> proof and a
+    <code>native_decide</code> proof of the same trivial identity
+    (e.g. <code>f x = f x</code>); a <code>UNDECIDED / UNSUPPORTED_SYNTAX</code>
+    from one but not the other is a red flag.
+  </p>
+  <p>
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>boundary_report(kind = "implemented_by")</code> enumerates
+    every declaration carrying the <code>@[implemented_by]</code>
+    attribute and, for each pair (declared body, native impl), attempts
+    a kernel-level <em>convertibility check</em> — reports each
+    unverified pair with its source position. Layer 2 is a thin wrapper
+    over v0 and does not introduce independent decision logic.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="native-decide-bluff.html">native_decide bluff</a> — the primary consumer of this attack surface; every silent <code>native_decide</code> forgery reduces to an <code>@[implemented_by]</code> override somewhere in the call graph.</li>
+  <li><a href="unsafe-escape.html">unsafe escape</a> — the native impl is almost always <code>unsafe def</code>; the two attacks share a working example.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>

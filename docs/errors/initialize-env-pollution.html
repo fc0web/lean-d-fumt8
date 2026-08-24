@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>initialize env pollution — LeanDFumt Errors</title>
+  <meta name="description" content="Detecting a Lean 4 top-level initialize block that mutates the elaboration environment. Preserves the load-time immutability discipline of LeanDFumt.">
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+
+<nav class="crumbs">
+  <a href="../index.html">Errors</a> / <span>initialize env pollution</span>
+</nav>
+
+<h1>
+  initialize env pollution
+  <span class="sub"><code>initialize</code> ブロックで環境を書き換えている</span>
+</h1>
+
+<h2>Error message</h2>
+<div class="block block-error">
+  <p><strong>Lean itself emits no error.</strong> This is a policy-level
+  detection: any top-level <code>initialize</code> block outside the
+  project's whitelist is flagged as a pre-check.</p>
+</div>
+
+<p>
+  Lean 4's <code>initialize</code> blocks run at module load time. They
+  are the standard mechanism for registering language extensions,
+  attribute handlers, simp sets, and elaboration hooks. Everything that
+  runs there executes <em>before</em> a downstream file's first
+  declaration is elaborated, and the changes persist for the rest of
+  the compilation. An attacker who can inject an
+  <code>initialize</code> block into an imported module can, for
+  example, add a fake <code>simp</code> lemma that rewrites
+  <code>False</code> to <code>True</code>, and every subsequent
+  <code>by simp</code> in the pipeline will silently trust it.
+</p>
+
+<h2>Minimal reproduction</h2>
+<pre><code>-- File: BadInit.lean
+import LeanDFumt
+import Lean
+
+namespace LeanDFumt
+
+/-- Register a fabricated simp lemma at load time. Every downstream
+    `by simp` sees it. -/
+initialize
+  Lean.Elab.Command.liftTermElabM do
+    let stx ← `(theorem contradictory_true : False = True := by admit)
+    Lean.Elab.Command.elabCommand stx
+
+end LeanDFumt
+
+-- File: Downstream.lean
+import LeanDFumt.BadInit
+
+example : False := by
+  have h : False = True := contradictory_true
+  rw [h]
+  trivial      -- passes; the polluted simp set says True = True</code></pre>
+
+<p>Build output: <em>clean</em> for the initialise site (the
+  <code>admit</code> is buried inside the runtime meta-program, not
+  the source), and <em>clean</em> for the downstream file — which now
+  imports a proof of <code>False</code>.</p>
+
+<div class="block block-error">
+  <p>The reproduction above is deliberately schematic. Real
+  environment-mutation attacks are more subtle — quietly registered
+  attributes, injected elaboration hooks, side-effectful
+  <code>IO</code> that touches the file system at compile time. The
+  point is that <em>none of them</em> surface at any single
+  <code>verify()</code> call: the fault is in the load-time
+  <em>context</em>, not in the checked expression.</p>
+</div>
+
+<h2>Why it matters</h2>
+
+<p>
+  LeanDFumt's <code>Basic.lean</code>, <code>Theorems.lean</code>, and
+  <code>PropEmbedding.lean</code> declare no <code>initialize</code>
+  blocks. Every proof is discharged by <code>decide</code>,
+  <code>native_decide</code>, or <code>rfl</code> — tactics that
+  depend only on the kernel and the declared bodies. Introducing an
+  <code>initialize</code> block into the algebraic core widens the
+  trust root to include every side effect executed at module load,
+  which is impossible to review <em>at</em> the theorem's site.
+</p>
+
+<p>
+  A downstream user of LeanDFumt has no way to know their
+  <code>by simp</code> tactic depends on load-time pollution; the
+  <code>#print axioms</code> command reports only the kernel axioms
+  the theorem consumes, not the run-time environment mutations that
+  shaped those axioms. This is the one attack surface where the usual
+  post-compile audit (<a href="axiom-bypass.html">axiom bypass</a>'s
+  <code>#print axioms</code>, <a href="classical-choice-smuggled.html">Classical.choice smuggled</a>'s
+  axiom inspection) is silent by design.
+</p>
+
+<h2>Fix</h2>
+<div class="block block-fix">
+  <p>Delete the <code>initialize</code> block. The three modules that
+  make up LeanDFumt do not need one, and every claim they make is
+  discharged without load-time machinery. If an algorithm genuinely
+  requires an extension (e.g., a custom notation package for D-FUMT₈
+  operators beyond the <code>scoped notation</code> already used),
+  isolate it in a dedicated module opted out of the algebraic-core
+  target:</p>
+  <pre><code># lakefile.toml
+[[lean_lib]]
+name = "LeanDFumtNotation"    # optional extension module
+# default_target = false      # not in `lake build` default set</code></pre>
+  <p>The whitelist for <code>initialize</code> blocks in LeanDFumt is
+  currently empty; the library is
+  <strong>load-time-immutable</strong>.</p>
+</div>
+
+<h2>Detection: CHECKER_SPEC</h2>
+<div class="block block-note">
+  <p>
+    <strong>v0 primitive (available today — spec §4, Appendix A):</strong>
+    not detectable through <code>verify()</code>. This is the
+    fundamental limitation: <code>verify()</code> checks a single
+    expression against the environment it was handed, and if that
+    environment has already been polluted at load time, the
+    <code>VALID</code> verdict is a truthful report of a corrupt
+    baseline. Enforcement in v0 is a pre-check that runs
+    <em>before</em> the file is loaded at all: parse each source file
+    for <code>initialize</code> blocks and reject the file if any
+    appears outside a project-declared whitelist. The whitelist
+    <em>must</em> be maintained by hand — this is one place where
+    "reject unless explicitly allowed" is the only safe default.
+  </p>
+  <p>
+    <strong>Post-v0 Layer 2 (planned — spec §13):</strong>
+    <code>boundary_report(kind = "initialize_block")</code> enumerates
+    every top-level <code>initialize</code> declaration in the project
+    and classifies each by the environment fragment it mutates
+    (attribute table, simp set, elaboration hook, filesystem IO). This
+    classification lets a downstream user judge severity without
+    reading the block's body. Layer 2 is a thin wrapper over v0 and
+    does not introduce independent decision logic.
+  </p>
+</div>
+
+<h2>See also</h2>
+<ul>
+  <li><a href="axiom-bypass.html">axiom bypass</a> — the "explicit trust root expansion" pattern; <code>initialize</code> pollution is the "implicit" version.</li>
+  <li><a href="unsafe-escape.html">unsafe escape</a> — both bypass the compile-time audit story; <code>unsafe</code> at the value level, <code>initialize</code> at the environment level.</li>
+</ul>
+
+<footer>
+  <p>
+    <a href="../index.html">← Error index</a> ·
+    <a href="https://github.com/fc0web/lean-d-fumt8">LeanDFumt on GitHub</a>
+  </p>
+  <p>
+    藤本伸樹 (Nobuki Fujimoto), Rei-AIOS Project, 2026. Apache-2.0. Lean 4.27.0.
+  </p>
+</footer>
+
+</body>
+</html>
